@@ -1,0 +1,1 @@
+# trendlyne-widget
