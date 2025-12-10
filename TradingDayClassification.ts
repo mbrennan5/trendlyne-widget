@@ -29,15 +29,17 @@ def isNewDay = GetDay() != GetDay()[1];
 # HOURLY SESSION TRACKING
 # ==============================================================================
 
-# Define hourly session boundaries (09:30, 10:30, 11:30, 12:30, 13:30, 14:30, 15:30)
-def currentHour = GetHour();
-def currentMinute = GetMinute();
-def hourMarker = currentHour * 100 + currentMinute;
+# NewHour: Triggers at the start of each hour (09:30, 10:30, 11:30, 12:30, 13:30, 14:30, 15:30)
+# Using SecondsFromTime to detect first bar of each hour
+def at0930 = SecondsFromTime(0930) == 0;
+def at1030 = SecondsFromTime(1030) == 0;
+def at1130 = SecondsFromTime(1130) == 0;
+def at1230 = SecondsFromTime(1230) == 0;
+def at1330 = SecondsFromTime(1330) == 0;
+def at1430 = SecondsFromTime(1430) == 0;
+def at1530 = SecondsFromTime(1530) == 0;
 
-# NewHour: Triggers once at the start of each hour (09:30, 10:30, 11:30, 12:30, 13:30, 14:30, 15:30)
-def NewHour = (hourMarker == 0930 or hourMarker == 1030 or hourMarker == 1130 or
-               hourMarker == 1230 or hourMarker == 1330 or hourMarker == 1430 or
-               hourMarker == 1530);
+def NewHour = at0930 or at1030 or at1130 or at1230 or at1330 or at1430 or at1530;
 
 # Track which hourly session we're in (0-6)
 def hourlySession = if isNewDay then 0
@@ -179,10 +181,13 @@ AddLabel(yes, "Range2: " + (if Range2 then "YES" else "NO"),
 # CLOUD VISUALIZATION (Optional - visualize the 930 range as a cloud)
 # ==============================================================================
 
-AddCloud(if isRTH then H930 else Double.NaN,
-         if isRTH then L930 else Double.NaN,
-         Color.DARK_GRAY,
-         Color.DARK_GRAY);
+plot CloudHigh = if isRTH then H930 else Double.NaN;
+plot CloudLow = if isRTH then L930 else Double.NaN;
+CloudHigh.SetDefaultColor(Color.DARK_GRAY);
+CloudLow.SetDefaultColor(Color.DARK_GRAY);
+CloudHigh.Hide();
+CloudLow.Hide();
+AddCloud(CloudHigh, CloudLow, Color.DARK_GRAY, Color.DARK_GRAY);
 
 # ==============================================================================
 # BACKGROUND COLOR (Optional - color the background based on classification)
