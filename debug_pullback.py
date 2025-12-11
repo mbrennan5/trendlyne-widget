@@ -30,15 +30,16 @@ def debug_classify_day(bars_data):
 
         print(f"\n{hour_time}: High={hour_high}, Low={hour_low}")
 
-        # Check directional bias
-        if hour_high > H930:
-            if not dir_up:
-                print(f"  → Dir_Up SET (high {hour_high} > opening {H930})")
-            dir_up = True
-        if hour_low < L930:
-            if not dir_down:
-                print(f"  → Dir_Down SET (low {hour_low} < opening {L930})")
-            dir_down = True
+        # Check directional bias (skip first bar - matches isNewDay reset in ThinkScript)
+        if i > 0:  # Skip first bar (9:30) - directional flags reset by isNewDay
+            if hour_high > H930:
+                if not dir_up:
+                    print(f"  → Dir_Up SET (high {hour_high} > opening {H930})")
+                dir_up = True
+            if hour_low < L930:
+                if not dir_down:
+                    print(f"  → Dir_Down SET (low {hour_low} < opening {L930})")
+                dir_down = True
 
         # Check for pullbacks (skip first hour at index 0)
         if i > 0 and prev_high is not None and prev_low is not None:
@@ -60,7 +61,7 @@ def debug_classify_day(bars_data):
                 else:
                     print(f"    No pullback (no directional bias yet)")
         elif i == 0:
-            print(f"  (First hour - pullback check skipped)")
+            print(f"  (First hour - directional and pullback checks skipped, matches isNewDay reset)")
 
         # Store for next iteration
         prev_high = hour_high
