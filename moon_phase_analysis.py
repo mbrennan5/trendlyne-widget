@@ -136,40 +136,71 @@ class MoonPhaseBacktest:
         """
         Generate trading signals based on moon phase
         moon_phase: 'full' or 'new'
+
+        Also calculates days until next opposite moon phase for dynamic holding
         """
         signals = pd.DataFrame(index=self.spy_data.index)
         signals['signal'] = False
+        signals['days_to_opposite_phase'] = np.nan
 
         # Get moon dates for the specified phase
         moon_dates = self.moon_data[self.moon_data['phase'] == moon_phase]['adjusted_date'].values
 
-        # Mark signal dates
+        # Get opposite phase dates
+        opposite_phase = 'new' if moon_phase == 'full' else 'full'
+        opposite_dates = self.moon_data[self.moon_data['phase'] == opposite_phase]['adjusted_date'].values
+
+        # Mark signal dates and calculate days to opposite phase
         for moon_date in moon_dates:
             # Find the closest trading day to the moon date
             closest_idx = self.spy_data.index.asof(pd.Timestamp(moon_date))
             if pd.notna(closest_idx) and closest_idx in signals.index:
                 signals.loc[closest_idx, 'signal'] = True
 
+                # Find next opposite phase date
+                future_opposite_dates = opposite_dates[opposite_dates > moon_date]
+                if len(future_opposite_dates) > 0:
+                    next_opposite = pd.Timestamp(future_opposite_dates[0])
+                    # Count trading days between moon phases
+                    future_trading_days = self.spy_data.loc[closest_idx:].index
+                    if next_opposite in future_trading_days:
+                        days_between = len(self.spy_data.loc[closest_idx:next_opposite]) - 1
+                        signals.loc[closest_idx, 'days_to_opposite_phase'] = days_between
+
         return signals
 
     def calculate_forward_performance(self, signals, holding_days):
         """
         Calculate forward performance metrics
+        holding_days: int for fixed days, or 'until_opposite' for dynamic holding
         """
         signal_dates = signals[signals['signal']].index
         returns = []
         winning_signals = 0
+        actual_holding_days_list = []
 
         for signal_date in signal_dates:
             try:
                 entry_price = self.spy_data.loc[signal_date, 'Close']
                 future_dates = self.spy_data.loc[signal_date:].index[1:]
 
-                if len(future_dates) >= holding_days:
-                    exit_date = future_dates[holding_days - 1]
+                # Determine holding period
+                if holding_days == 'until_opposite':
+                    # Use dynamic holding until opposite moon phase
+                    days_to_hold = signals.loc[signal_date, 'days_to_opposite_phase']
+                    if pd.isna(days_to_hold) or days_to_hold <= 0:
+                        continue
+                    days_to_hold = int(days_to_hold)
+                else:
+                    # Use fixed holding period
+                    days_to_hold = int(holding_days)
+
+                if len(future_dates) >= days_to_hold:
+                    exit_date = future_dates[days_to_hold - 1]
                     exit_price = self.spy_data.loc[exit_date, 'Close']
                     forward_return = (exit_price / entry_price) - 1
                     returns.append(forward_return)
+                    actual_holding_days_list.append(days_to_hold)
                     if exit_price > entry_price:
                         winning_signals += 1
             except Exception:
@@ -184,6 +215,7 @@ class MoonPhaseBacktest:
             'median_return': np.median(returns) if returns else 0,
             'total_return': np.prod([1 + r for r in returns]) - 1 if returns else 0,
             'std_return': np.std(returns) if returns else 0,
+            'avg_holding_days': np.mean(actual_holding_days_list) if actual_holding_days_list else 0,
         }
 
         return metrics
@@ -191,6 +223,7 @@ class MoonPhaseBacktest:
     def run_optimization_grid(self, data_slice, moon_phase='full'):
         """
         Test different holding periods for a given moon phase
+        Includes both fixed holding periods and 'until_opposite' dynamic holding
         """
         results = []
 
@@ -200,6 +233,7 @@ class MoonPhaseBacktest:
         # Filter signals to only those in the data slice
         signals_slice = signals.loc[data_slice.index]
 
+        # Test fixed holding periods
         for holding_days in self.holding_period_range:
             # Calculate metrics for this holding period
             metrics = self.calculate_forward_performance_slice(
@@ -214,14 +248,39 @@ class MoonPhaseBacktest:
                 results.append({
                     'moon_phase': moon_phase,
                     'holding_days': holding_days,
+                    'holding_type': 'fixed',
                     'win_rate': metrics['win_rate'],
                     'total_signals': metrics['total_signals'],
                     'avg_return': metrics['avg_return'],
                     'median_return': metrics['median_return'],
                     'total_return': metrics['total_return'],
                     'std_return': metrics['std_return'],
+                    'avg_holding_days': holding_days,
                     'score': score,
                 })
+
+        # Test dynamic holding until opposite moon phase
+        metrics = self.calculate_forward_performance_slice(
+            signals_slice, data_slice, 'until_opposite'
+        )
+
+        if metrics['total_signals'] >= 3:
+            score = metrics['avg_return']
+            opposite_phase = 'New' if moon_phase == 'full' else 'Full'
+
+            results.append({
+                'moon_phase': moon_phase,
+                'holding_days': f'Until {opposite_phase}',
+                'holding_type': 'dynamic',
+                'win_rate': metrics['win_rate'],
+                'total_signals': metrics['total_signals'],
+                'avg_return': metrics['avg_return'],
+                'median_return': metrics['median_return'],
+                'total_return': metrics['total_return'],
+                'std_return': metrics['std_return'],
+                'avg_holding_days': metrics.get('avg_holding_days', 0),
+                'score': score,
+            })
 
         results_df = pd.DataFrame(results)
         return results_df.sort_values('score', ascending=False) if not results_df.empty else pd.DataFrame()
@@ -229,10 +288,12 @@ class MoonPhaseBacktest:
     def calculate_forward_performance_slice(self, signals, data_slice, holding_days):
         """
         Calculate forward performance for a specific data slice
+        holding_days: int for fixed days, or 'until_opposite' for dynamic holding
         """
         signal_dates = signals[signals['signal']].index
         returns = []
         winning_signals = 0
+        actual_holding_days_list = []
 
         for signal_date in signal_dates:
             try:
@@ -242,11 +303,23 @@ class MoonPhaseBacktest:
                 entry_price = data_slice.loc[signal_date, 'Close']
                 future_dates = data_slice.loc[signal_date:].index[1:]
 
-                if len(future_dates) >= holding_days:
-                    exit_date = future_dates[holding_days - 1]
+                # Determine holding period
+                if holding_days == 'until_opposite':
+                    # Use dynamic holding until opposite moon phase
+                    days_to_hold = signals.loc[signal_date, 'days_to_opposite_phase']
+                    if pd.isna(days_to_hold) or days_to_hold <= 0:
+                        continue
+                    days_to_hold = int(days_to_hold)
+                else:
+                    # Use fixed holding period
+                    days_to_hold = int(holding_days)
+
+                if len(future_dates) >= days_to_hold:
+                    exit_date = future_dates[days_to_hold - 1]
                     exit_price = data_slice.loc[exit_date, 'Close']
                     forward_return = (exit_price / entry_price) - 1
                     returns.append(forward_return)
+                    actual_holding_days_list.append(days_to_hold)
                     if exit_price > entry_price:
                         winning_signals += 1
             except Exception:
@@ -261,6 +334,7 @@ class MoonPhaseBacktest:
             'median_return': np.median(returns) if returns else 0,
             'total_return': np.prod([1 + r for r in returns]) - 1 if returns else 0,
             'std_return': np.std(returns) if returns else 0,
+            'avg_holding_days': np.mean(actual_holding_days_list) if actual_holding_days_list else 0,
         }
 
         return metrics
@@ -271,9 +345,9 @@ class MoonPhaseBacktest:
             print(f"| No valid results for {moon_phase.upper()} moon in Fold {fold_number}.")
             return
 
-        print("\n" + "="*90)
+        print("\n" + "="*100)
         print(f"| 🌙 {moon_phase.upper()} MOON OPTIMIZATION - FOLD {fold_number} |")
-        print("="*90)
+        print("="*100)
 
         display_df = results_df.copy()
         display_df['Avg Ret'] = (display_df['avg_return'] * 100).map('{:.2f}%'.format)
@@ -281,20 +355,22 @@ class MoonPhaseBacktest:
         display_df['Win Rate'] = (display_df['win_rate'] * 100).map('{:.1f}%'.format)
         display_df['Total Ret'] = (display_df['total_return'] * 100).map('{:.1f}%'.format)
 
-        display_df = display_df[['holding_days', 'score', 'Win Rate', 'Avg Ret',
+        display_df = display_df[['holding_days', 'avg_holding_days', 'score', 'Win Rate', 'Avg Ret',
                                  'Std Dev', 'Total Ret', 'total_signals']]
-        display_df.columns = ['Hold Days', 'Score', 'WR', 'Avg Ret', 'Std Dev', 'Tot Ret', 'Signals']
+        display_df.columns = ['Hold Period', 'Avg Days', 'Score', 'WR', 'Avg Ret', 'Std Dev', 'Tot Ret', 'Signals']
 
-        print(display_df.head(10).to_markdown(index=False, floatfmt=(".0f", ".4f")))
-        print("="*90)
+        print(display_df.head(12).to_markdown(index=False, floatfmt=(".0f", ".1f", ".4f")))
+        print("="*100)
 
     def cross_validate_parameters(self, moon_phase='full', K=5):
         """
         Perform time-series K-Fold Cross-Validation for moon phase strategy
         """
+        opposite_phase = 'New' if moon_phase == 'full' else 'Full'
         print("\n" + "~"*100)
         print(f"🏁 RUNNING K={K}-FOLD CV for {moon_phase.upper()} MOON STRATEGY")
-        print(f"🎯 Holding Periods: {self.holding_period_range.tolist()}")
+        print(f"🎯 Fixed Holding Periods: {self.holding_period_range.tolist()} days")
+        print(f"🎯 Dynamic Holding: Until {opposite_phase} Moon (~14 days)")
         print("~"*100)
 
         data = self.spy_data
@@ -331,20 +407,31 @@ class MoonPhaseBacktest:
 
             # Get best parameters
             best_params = is_results_df.iloc[0]
-            H_star = int(best_params['holding_days'])
+            H_star = best_params['holding_days']
+
+            # Check if it's a dynamic or fixed holding period
+            if isinstance(H_star, str):
+                # Dynamic holding (e.g., 'Until New' or 'Until Full')
+                H_star_value = 'until_opposite'
+                H_star_display = H_star
+            else:
+                # Fixed holding period
+                H_star_value = int(H_star)
+                H_star_display = f"{H_star_value} days"
 
             # Test on OOS data
             oos_signals = self.generate_moon_signals(moon_phase)
             oos_test_signals = oos_signals.loc[oos_data.index]
 
             oos_metrics = self.calculate_forward_performance_slice(
-                oos_test_signals, oos_data, H_star
+                oos_test_signals, oos_data, H_star_value
             )
 
             oos_results.append({
                 'Fold': i + 1,
                 'Moon_Phase': moon_phase,
-                'H_star': H_star,
+                'H_star': H_star_display,
+                'Avg_Hold_Days': oos_metrics.get('avg_holding_days', H_star_value if isinstance(H_star_value, int) else 0),
                 'OOS_WinRate': oos_metrics['win_rate'],
                 'OOS_AvgReturn': oos_metrics['avg_return'],
                 'OOS_TotalSignals': oos_metrics['total_signals'],
@@ -355,7 +442,7 @@ class MoonPhaseBacktest:
                 'IS_Score': best_params['score'],
             })
 
-            print(f"Optimal Hold: {H_star} days "
+            print(f"Optimal Hold: {H_star_display} (Avg: {oos_metrics.get('avg_holding_days', 0):.1f} days) "
                   f"(OOS WR: {oos_metrics['win_rate']:.1%}, AR: {oos_metrics['avg_return']:.2%}, "
                   f"Signals: {oos_metrics['total_signals']:.0f})")
 
@@ -373,17 +460,18 @@ class MoonPhaseBacktest:
 
         # Table 1: Fold Results
         print("\n## 1. Out-of-Sample Performance by Fold")
-        print("-" * 120)
+        print("-" * 130)
 
         sorted_oos = oos_results_df.sort_values('OOS_AvgReturn', ascending=False)
 
-        print(f"{'Fold':>4} {'Test Period':>25} {'Hold*':>6} "
+        print(f"{'Fold':>4} {'Test Period':>25} {'Hold Strategy':>15} {'Avg Days':>9} "
               f"{'IS Score':>8} {'WR':>8} {'Avg Ret':>8} {'Std Dev':>8} {'Signals':>8}")
-        print("-" * 120)
+        print("-" * 130)
 
         for i, row in sorted_oos.iterrows():
+            h_star_str = str(row['H_star'])[:15]  # Truncate if needed
             print(f"{row['Fold']:4.0f} {str(row['OOS_Start'])} to {str(row['OOS_End']):10} "
-                  f"{row['H_star']:6.0f} "
+                  f"{h_star_str:>15} {row['Avg_Hold_Days']:9.1f} "
                   f"{row['IS_Score']:8.3f} "
                   f"{row['OOS_WinRate']:7.1%} {row['OOS_AvgReturn']:7.2%} "
                   f"{row['OOS_StdReturn']:7.2%} {row['OOS_TotalSignals']:8.0f}")
