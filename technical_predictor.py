@@ -56,10 +56,35 @@ daytype_df['IsRange'] = (daytype_df['DayType'] == 'RANGE DAY').astype(int)
 
 print(f"✓ Loaded {len(daytype_df):,} classified days for {daytype_df['Symbol'].nunique()} symbols")
 
+# Show available symbols
+all_symbols = sorted(daytype_df['Symbol'].unique())
+print(f"\nAvailable symbols ({len(all_symbols)}):")
+print(f"  {', '.join(all_symbols)}")
+
+# ============================================================================
+# USER INPUT: Symbol Selection
+# ============================================================================
+print("\n" + "="*80)
+print("SYMBOL SELECTION")
+print("="*80)
+symbols_input = input("Enter symbols to test (comma-separated, or 'ALL'): ")
+SYMBOLS = None if symbols_input.upper().strip() == 'ALL' else [s.strip().upper() for s in symbols_input.split(',')]
+
+if SYMBOLS:
+    # Filter daytype data to selected symbols
+    daytype_df = daytype_df[daytype_df['Symbol'].isin(SYMBOLS)].copy()
+    print(f"\n✓ Filtered to {len(SYMBOLS)} symbol(s): {', '.join(SYMBOLS)}")
+    print(f"  {len(daytype_df):,} classified days")
+else:
+    SYMBOLS = all_symbols
+    print(f"\n✓ Using ALL {len(SYMBOLS)} symbols")
+
 # ============================================================================
 # STEP 2: Load Raw Price Data and Calculate Daily OHLCV
 # ============================================================================
-print("\nSTEP 2: Loading raw price data and calculating daily OHLCV...")
+print("\n" + "="*80)
+print("STEP 2: Loading raw price data and calculating daily OHLCV...")
+print("="*80)
 
 def load_symbol_daily_data(symbol: str, start_year: int = None, end_year: int = None) -> pd.DataFrame:
     """Load all year files for a symbol and create daily OHLCV bars"""
@@ -116,18 +141,19 @@ def load_symbol_daily_data(symbol: str, start_year: int = None, end_year: int = 
 
     return daily
 
-# Get unique symbols
-symbols = daytype_df['Symbol'].unique()
-print(f"Loading price data for {len(symbols)} symbols...")
-
 # User input for year range
-start_year_input = input("\nStart YEAR for price data (e.g., 2020, or press Enter for all): ")
+print("\n" + "-"*80)
+print("YEAR RANGE SELECTION")
+print("-"*80)
+start_year_input = input("Start YEAR for price data (e.g., 2020, or press Enter for all): ")
 START_YEAR = None if start_year_input.strip() == '' else int(start_year_input.strip())
 end_year_input = input("End YEAR for price data (e.g., 2025, or press Enter for all): ")
 END_YEAR = None if end_year_input.strip() == '' else int(end_year_input.strip())
 
+print(f"\nLoading price data for {len(SYMBOLS)} symbol(s)...")
+
 all_daily_data = []
-for symbol in symbols:
+for symbol in SYMBOLS:
     print(f"  Loading {symbol}...", end=' ')
     daily = load_symbol_daily_data(symbol, START_YEAR, END_YEAR)
     if not daily.empty:
@@ -206,7 +232,7 @@ def calculate_indicators(df: pd.DataFrame) -> pd.DataFrame:
 
 # Calculate indicators per symbol
 indicator_data = []
-for symbol in symbols:
+for symbol in SYMBOLS:
     symbol_price = price_df[price_df['Symbol'] == symbol].copy()
     symbol_indicators = calculate_indicators(symbol_price)
     indicator_data.append(symbol_indicators)
@@ -268,6 +294,17 @@ merged_df['Next_DayType'] = merged_df.groupby('Symbol')['DayType'].shift(-1)
 predictive_df = merged_df.dropna(subset=['Next_IsDirectional']).copy()
 
 print(f"✓ Created predictive dataset with {len(predictive_df):,} samples")
+
+# Create filename suffix based on symbol selection
+if len(SYMBOLS) <= 3:
+    symbol_suffix = "_" + "_".join(SYMBOLS)
+elif len(SYMBOLS) == len(all_symbols):
+    symbol_suffix = "_ALL"
+else:
+    symbol_suffix = f"_{len(SYMBOLS)}symbols"
+
+print(f"\nAnalyzing: {', '.join(SYMBOLS)}")
+print(f"Filename suffix: {symbol_suffix}")
 
 # ============================================================================
 # STEP 5: Analyze Predictive Power of Each Indicator
@@ -400,7 +437,7 @@ print("\nRanked by Absolute Edge:")
 print(results_df[['Indicator', 'Type', 'Directional%_When_True', 'Edge', 'When_True_Count']].to_string(index=False))
 
 # Save results
-indicators_file = os.path.join(OUTPUT_DIR, 'predictive_indicators_analysis.csv')
+indicators_file = os.path.join(OUTPUT_DIR, f'predictive_indicators_analysis{symbol_suffix}.csv')
 results_df.to_csv(indicators_file, index=False)
 print(f"\n✓ Saved to: {indicators_file}")
 
@@ -449,7 +486,7 @@ for ind1, ind2 in combinations:
 combo_df = pd.DataFrame(combo_results)
 combo_df = combo_df.sort_values('Edge', ascending=False)
 
-combo_file = os.path.join(OUTPUT_DIR, 'combination_analysis.csv')
+combo_file = os.path.join(OUTPUT_DIR, f'combination_analysis{symbol_suffix}.csv')
 combo_df.to_csv(combo_file, index=False)
 
 # ============================================================================
@@ -510,7 +547,7 @@ if len(combo_df) > 0:
 
 plt.tight_layout()
 
-viz_file = os.path.join(OUTPUT_DIR, 'predictive_indicators_charts.png')
+viz_file = os.path.join(OUTPUT_DIR, f'predictive_indicators_charts{symbol_suffix}.png')
 plt.savefig(viz_file, dpi=150, bbox_inches='tight')
 print(f"✓ Visualizations saved to: {viz_file}")
 plt.show()
@@ -533,7 +570,7 @@ export_df = predictive_df[[
     'Next_DayType', 'Next_IsDirectional', 'Next_IsDNP'
 ]].copy()
 
-dataset_file = os.path.join(OUTPUT_DIR, 'predictive_dataset_with_indicators.csv')
+dataset_file = os.path.join(OUTPUT_DIR, f'predictive_dataset_with_indicators{symbol_suffix}.csv')
 export_df.to_csv(dataset_file, index=False)
 print(f"✓ Full dataset exported to: {dataset_file}")
 
@@ -543,6 +580,9 @@ print(f"✓ Full dataset exported to: {dataset_file}")
 print("\n" + "="*80)
 print("ANALYSIS COMPLETE - KEY FINDINGS")
 print("="*80)
+
+print(f"\nSymbols tested: {', '.join(SYMBOLS)}")
+print(f"Total samples: {len(predictive_df):,} trading days")
 
 baseline = predictive_df['Next_IsDirectional'].mean() * 100
 print(f"\nBaseline (overall directional rate): {baseline:.1f}%")
