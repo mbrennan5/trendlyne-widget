@@ -67,17 +67,41 @@ print(f"  {', '.join(all_symbols)}")
 print("\n" + "="*80)
 print("SYMBOL SELECTION")
 print("="*80)
-symbols_input = input("Enter symbols to test (comma-separated, or 'ALL'): ")
-SYMBOLS = None if symbols_input.upper().strip() == 'ALL' else [s.strip().upper() for s in symbols_input.split(',')]
+symbols_input = input("Enter symbols to test (comma-separated, or 'ALL' or press Enter for ALL): ").strip()
 
-if SYMBOLS:
-    # Filter daytype data to selected symbols
-    daytype_df = daytype_df[daytype_df['Symbol'].isin(SYMBOLS)].copy()
-    print(f"\n✓ Filtered to {len(SYMBOLS)} symbol(s): {', '.join(SYMBOLS)}")
-    print(f"  {len(daytype_df):,} classified days")
-else:
+# Handle empty input - default to ALL
+if not symbols_input or symbols_input.upper() == 'ALL':
     SYMBOLS = all_symbols
     print(f"\n✓ Using ALL {len(SYMBOLS)} symbols")
+else:
+    # Parse comma-separated list and remove empty strings
+    SYMBOLS = [s.strip().upper() for s in symbols_input.split(',') if s.strip()]
+
+    if not SYMBOLS:
+        print("\n⚠ No valid symbols entered. Using ALL symbols.")
+        SYMBOLS = all_symbols
+    else:
+        # Filter daytype data to selected symbols
+        daytype_df_filtered = daytype_df[daytype_df['Symbol'].isin(SYMBOLS)].copy()
+
+        # Check if any symbols were found
+        if len(daytype_df_filtered) == 0:
+            print(f"\n✗ ERROR: None of the symbols {SYMBOLS} found in daytype results!")
+            print(f"Available symbols: {', '.join(all_symbols[:10])}...")
+            raise ValueError("No matching symbols found")
+
+        # Check which symbols were found
+        found_symbols = daytype_df_filtered['Symbol'].unique().tolist()
+        missing_symbols = [s for s in SYMBOLS if s not in found_symbols]
+
+        if missing_symbols:
+            print(f"\n⚠ Warning: Symbols not found: {', '.join(missing_symbols)}")
+
+        daytype_df = daytype_df_filtered
+        SYMBOLS = found_symbols  # Update to only found symbols
+
+        print(f"\n✓ Filtered to {len(SYMBOLS)} symbol(s): {', '.join(SYMBOLS)}")
+        print(f"  {len(daytype_df):,} classified days")
 
 # ============================================================================
 # STEP 2: Load Raw Price Data and Calculate Daily OHLCV
