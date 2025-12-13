@@ -381,15 +381,23 @@ for indicator in continuous_indicators:
     if len(valid_data) < 50:
         continue
 
-    # Split into quartiles
-    valid_data['Quartile'] = pd.qcut(valid_data[indicator], q=4, labels=['Q1', 'Q2', 'Q3', 'Q4'], duplicates='drop')
+    try:
+        # Split into quartiles
+        valid_data['Quartile'] = pd.qcut(valid_data[indicator], q=4, labels=False, duplicates='drop')
 
-    # Directional rate in bottom quartile (low values)
-    q1_data = valid_data[valid_data['Quartile'] == 'Q1']
-    # Directional rate in top quartile (high values)
-    q4_data = valid_data[valid_data['Quartile'] == 'Q4']
+        # Get min and max quartile numbers (in case duplicates reduced number of bins)
+        min_q = valid_data['Quartile'].min()
+        max_q = valid_data['Quartile'].max()
 
-    if len(q1_data) < 10 or len(q4_data) < 10:
+        # Directional rate in bottom quartile (low values)
+        q1_data = valid_data[valid_data['Quartile'] == min_q]
+        # Directional rate in top quartile (high values)
+        q4_data = valid_data[valid_data['Quartile'] == max_q]
+
+        if len(q1_data) < 10 or len(q4_data) < 10:
+            continue
+    except (ValueError, TypeError):
+        # Skip if can't create quartiles (too many duplicates)
         continue
 
     dir_rate_low = q1_data['Next_IsDirectional'].mean() * 100
