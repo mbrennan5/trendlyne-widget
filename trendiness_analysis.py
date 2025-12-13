@@ -52,6 +52,10 @@ class DayTypeClassifier30Min:
 
     def load_30min_data(self, file_path: Path) -> pd.DataFrame:
         df = pd.read_csv(file_path)
+
+        # Diagnostic: Show how many rows we loaded
+        print(f"Loaded {len(df)} rows from CSV...", end=' ')
+
         if 't' in df.columns:
             df['datetime'] = pd.to_datetime(df['t'], utc=True)
         elif 'datetime' in df.columns:
@@ -65,6 +69,11 @@ class DayTypeClassifier30Min:
         except Exception as e:
             if not hasattr(df.index, 'tz') or df.index.tz is None:
                 df.index = pd.DatetimeIndex(df.index).tz_localize('UTC').tz_convert(self.timezone)
+
+        # Diagnostic: Show date range in file
+        if len(df) > 0:
+            print(f"Date range: {df.index.min().date()} to {df.index.max().date()}", end=' ')
+
         return df
 
     def aggregate_to_hourly(self, df_30min: pd.DataFrame) -> pd.DataFrame:
@@ -183,22 +192,33 @@ class DayTypeClassifier30Min:
         return classification, debug_info
 
     def analyze_symbol(self, symbol: str, file_path: Path, start_date: str = None, end_date: str = None) -> pd.DataFrame:
-        print(f"Analyzing {symbol}...", end=' ')
+        print(f"\nAnalyzing {symbol}...", end=' ')
         df_30min = self.load_30min_data(file_path)
         if df_30min.empty:
             print(f"No data")
             return pd.DataFrame()
+
+        # Apply date filtering if specified
         if start_date:
+            before_filter = len(df_30min)
             df_30min = df_30min[df_30min.index >= start_date]
+            print(f"\nAfter start_date filter: {len(df_30min)} rows (filtered out {before_filter - len(df_30min)})", end=' ')
         if end_date:
+            before_filter = len(df_30min)
             df_30min = df_30min[df_30min.index <= end_date]
+            print(f"\nAfter end_date filter: {len(df_30min)} rows (filtered out {before_filter - len(df_30min)})", end=' ')
+
         df_hourly = self.aggregate_to_hourly(df_30min)
         if df_hourly.empty:
-            print(f"No hourly data")
+            print(f"\nNo hourly data")
             return pd.DataFrame()
 
+        # Show unique dates
+        unique_dates = df_hourly['date'].unique()
+        print(f"\n→ {len(unique_dates)} unique trading days", end=' ')
+
         results = []
-        for date in df_hourly['date'].unique():
+        for date in unique_dates:
             day_data = df_hourly[df_hourly['date'] == date]
             classification, debug_info = self.classify_day(day_data)
             results.append({
@@ -213,7 +233,7 @@ class DayTypeClassifier30Min:
             })
 
         results_df = pd.DataFrame(results)
-        print(f"✓ {len(results_df)} days")
+        print(f"✓")
         return results_df
 
     def analyze_all(self, symbols: List[str] = None, start_date: str = None, end_date: str = None) -> Dict[str, pd.DataFrame]:
