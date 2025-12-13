@@ -186,11 +186,17 @@ def calculate_indicators(df: pd.DataFrame) -> pd.DataFrame:
     df['TR'] = df[['High', 'PrevClose']].max(axis=1) - df[['Low', 'PrevClose']].min(axis=1)
     df['TR_Pct'] = (df['TR'] / df['Close']) * 100
 
-    # NR4 - Narrow Range 4 (range is smallest of last 4 days)
+    # Narrow Range indicators (NR2, NR3, NR4, NR7)
+    df['NR2'] = (df['Range'] == df['Range'].rolling(2).min()).astype(int)
+    df['NR3'] = (df['Range'] == df['Range'].rolling(3).min()).astype(int)
     df['NR4'] = (df['Range'] == df['Range'].rolling(4).min()).astype(int)
-
-    # NR7 - Narrow Range 7 (range is smallest of last 7 days)
     df['NR7'] = (df['Range'] == df['Range'].rolling(7).min()).astype(int)
+
+    # Wide Range indicators (opposite of NR - range is LARGEST in period)
+    df['WR2'] = (df['Range'] == df['Range'].rolling(2).max()).astype(int)
+    df['WR3'] = (df['Range'] == df['Range'].rolling(3).max()).astype(int)
+    df['WR4'] = (df['Range'] == df['Range'].rolling(4).max()).astype(int)
+    df['WR7'] = (df['Range'] == df['Range'].rolling(7).max()).astype(int)
 
     # ADR (Average Daily Range) - 20 day
     df['ADR_20'] = df['Range_Pct'].rolling(20).mean()
@@ -201,6 +207,9 @@ def calculate_indicators(df: pd.DataFrame) -> pd.DataFrame:
 
     # Volatility Contraction (range < 0.7 * average range)
     df['Vol_Contraction'] = (df['Range_Pct'] < (df['ADR_20'] * 0.7)).astype(int)
+
+    # Volatility Expansion (range > 1.3 * average range) - MOMENTUM
+    df['Vol_Expansion'] = (df['Range_Pct'] > (df['ADR_20'] * 1.3)).astype(int)
 
     # ATR (Average True Range) - 14 day
     df['ATR_14'] = df['TR_Pct'].rolling(14).mean()
@@ -225,6 +234,11 @@ def calculate_indicators(df: pd.DataFrame) -> pd.DataFrame:
     df['Gap_Pct'] = (df['Gap'] / df['PrevClose']) * 100
     df['Gap_Up'] = (df['Gap_Pct'] > 0.5).astype(int)
     df['Gap_Down'] = (df['Gap_Pct'] < -0.5).astype(int)
+
+    # Large Gap indicators (momentum)
+    df['Large_Gap_Up'] = (df['Gap_Pct'] > 1.5).astype(int)
+    df['Large_Gap_Down'] = (df['Gap_Pct'] < -1.5).astype(int)
+    df['Large_Gap_Any'] = ((df['Gap_Pct'].abs()) > 1.5).astype(int)
 
     # Consecutive range/directional days (will be added after merge)
 
@@ -281,6 +295,9 @@ def add_consecutive_patterns(df):
 
         df.loc[mask, 'Consec_Range'] = consec
 
+    # Binary indicator for high consecutive range (3+ days)
+    df['High_Consec_Range'] = (df['Consec_Range'] >= 3).astype(int)
+
     return df
 
 merged_df = add_consecutive_patterns(merged_df)
@@ -315,8 +332,20 @@ print("="*80)
 
 # Define indicator columns to test
 indicator_columns = [
-    'NR4', 'NR7', 'Vol_Contraction', 'High_Volume', 'Low_Volume',
-    'Gap_Up', 'Gap_Down', 'Prev_IsRange', 'Prev_IsDirectional'
+    # Narrow Range indicators
+    'NR2', 'NR3', 'NR4', 'NR7',
+    # Wide Range indicators (MOMENTUM)
+    'WR2', 'WR3', 'WR4', 'WR7',
+    # Volatility
+    'Vol_Contraction', 'Vol_Expansion',
+    # Volume
+    'High_Volume', 'Low_Volume',
+    # Gaps
+    'Gap_Up', 'Gap_Down', 'Large_Gap_Up', 'Large_Gap_Down', 'Large_Gap_Any',
+    # Previous day patterns
+    'Prev_IsRange', 'Prev_IsDirectional',
+    # Consecutive patterns
+    'High_Consec_Range'
 ]
 
 continuous_indicators = [
@@ -450,28 +479,57 @@ results_df.to_csv(indicators_file, index=False)
 print(f"\n✓ Saved to: {indicators_file}")
 
 # ============================================================================
-# STEP 7: Combination Analysis (NR4 + other indicators)
+# STEP 7: Combination Analysis - MOMENTUM & CONTRACTION
 # ============================================================================
 print("\n" + "="*80)
 print("STEP 7: COMBINATION ANALYSIS")
 print("="*80)
 
-print("\nTesting combinations with NR4 or NR7:")
+print("\n--- MOMENTUM COMBINATIONS (High Range + Gaps + Volume) ---")
 
-combinations = [
-    ('NR4', 'Vol_Contraction'),
-    ('NR7', 'Vol_Contraction'),
-    ('NR4', 'Low_Volume'),
-    ('NR7', 'Low_Volume'),
-    ('NR4', 'Prev_IsRange'),
-    ('NR7', 'Prev_IsRange'),
-    ('Vol_Contraction', 'Low_Volume'),
-    ('Vol_Contraction', 'Prev_IsRange'),
+momentum_combinations = [
+    # Wide Range + Gaps
+    ('WR2', 'Large_Gap_Any'),
+    ('WR3', 'Large_Gap_Any'),
+    ('WR4', 'Gap_Up'),
+    ('WR7', 'Gap_Up'),
+    # Wide Range + Volume
+    ('WR2', 'High_Volume'),
+    ('WR3', 'High_Volume'),
+    ('WR4', 'High_Volume'),
+    # Volatility Expansion + Gaps
+    ('Vol_Expansion', 'Large_Gap_Any'),
+    ('Vol_Expansion', 'Gap_Up'),
+    ('Vol_Expansion', 'High_Volume'),
+    # Multiple momentum signals
+    ('Large_Gap_Any', 'High_Volume'),
+    ('Gap_Up', 'High_Volume'),
 ]
+
+print("\n--- CONTRACTION COMBINATIONS (NR + Low Volume + Consecutive Range) ---")
+
+contraction_combinations = [
+    # NR variants
+    ('NR2', 'Low_Volume'),
+    ('NR3', 'Low_Volume'),
+    ('NR4', 'Low_Volume'),
+    ('NR2', 'Vol_Contraction'),
+    ('NR3', 'Vol_Contraction'),
+    # Consecutive range breakouts
+    ('High_Consec_Range', 'Vol_Contraction'),
+    ('High_Consec_Range', 'Low_Volume'),
+    ('High_Consec_Range', 'NR4'),
+    ('Prev_IsRange', 'NR4'),
+    ('Prev_IsRange', 'Vol_Contraction'),
+]
+
+# Combine all combinations
+combinations = momentum_combinations + contraction_combinations
 
 combo_results = []
 
-for ind1, ind2 in combinations:
+# Process momentum combinations
+for ind1, ind2 in momentum_combinations:
     # Both indicators true
     both_true = predictive_df[(predictive_df[ind1] == 1) & (predictive_df[ind2] == 1)]
 
@@ -483,6 +541,29 @@ for ind1, ind2 in combinations:
     edge = dir_rate - baseline
 
     combo_results.append({
+        'Type': 'Momentum',
+        'Combination': f"{ind1} + {ind2}",
+        'Count': len(both_true),
+        'Directional%': dir_rate,
+        'Edge': edge
+    })
+
+    print(f"  {ind1:20s} + {ind2:20s}: {dir_rate:5.1f}% (n={len(both_true):3}) | Edge: {edge:+5.1f}%")
+
+# Process contraction combinations
+for ind1, ind2 in contraction_combinations:
+    # Both indicators true
+    both_true = predictive_df[(predictive_df[ind1] == 1) & (predictive_df[ind2] == 1)]
+
+    if len(both_true) < 10:
+        continue
+
+    dir_rate = both_true['Next_IsDirectional'].mean() * 100
+    baseline = predictive_df['Next_IsDirectional'].mean() * 100
+    edge = dir_rate - baseline
+
+    combo_results.append({
+        'Type': 'Contraction',
         'Combination': f"{ind1} + {ind2}",
         'Count': len(both_true),
         'Directional%': dir_rate,
@@ -493,6 +574,11 @@ for ind1, ind2 in combinations:
 
 combo_df = pd.DataFrame(combo_results)
 combo_df = combo_df.sort_values('Edge', ascending=False)
+
+print("\n" + "="*80)
+print("TOP COMBINATIONS (sorted by Edge)")
+print("="*80)
+print(combo_df.head(15).to_string(index=False))
 
 combo_file = os.path.join(OUTPUT_DIR, f'combination_analysis{symbol_suffix}.csv')
 combo_df.to_csv(combo_file, index=False)
@@ -570,11 +656,24 @@ print("="*80)
 # Export the predictive dataset
 export_df = predictive_df[[
     'Symbol', 'Date', 'Open', 'High', 'Low', 'Close', 'Volume',
-    'Range_Pct', 'NR4', 'NR7', 'ADR_ZScore', 'ATR_ZScore', 'BB_Width_ZScore',
-    'Vol_Contraction', 'Volume_Ratio', 'High_Volume', 'Low_Volume',
-    'Gap_Pct', 'Gap_Up', 'Gap_Down',
-    'Prev_DayType', 'Prev_IsRange', 'Consec_Range',
+    'Range_Pct', 'TR_Pct',
+    # Narrow Range
+    'NR2', 'NR3', 'NR4', 'NR7',
+    # Wide Range (MOMENTUM)
+    'WR2', 'WR3', 'WR4', 'WR7',
+    # Volatility indicators
+    'ADR_ZScore', 'ATR_ZScore', 'BB_Width_ZScore',
+    'Vol_Contraction', 'Vol_Expansion',
+    # Volume
+    'Volume_Ratio', 'High_Volume', 'Low_Volume',
+    # Gaps
+    'Gap_Pct', 'Gap_Up', 'Gap_Down', 'Large_Gap_Up', 'Large_Gap_Down', 'Large_Gap_Any',
+    # Previous day patterns
+    'Prev_DayType', 'Prev_IsRange', 'Prev_IsDirectional',
+    'Consec_Range', 'High_Consec_Range',
+    # Current day type
     'DayType', 'IsDirectional', 'IsDNP', 'IsRange',
+    # Next day (target)
     'Next_DayType', 'Next_IsDirectional', 'Next_IsDNP'
 ]].copy()
 
