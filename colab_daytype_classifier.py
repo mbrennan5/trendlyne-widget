@@ -1,16 +1,51 @@
 """
-Google Colab - Day Type Classifier using 30-Minute Data
-Complete code for analyzing trading day types from 30-minute CSV files
+============================================================================
+GOOGLE COLAB - DAY TYPE CLASSIFIER USING 30-MINUTE DATA
+============================================================================
 
-To use in Google Colab:
-1. Mount Google Drive
-2. Ensure 30-minute data files are in /content/drive/MyDrive/StockData/
-3. Run this cell
+Complete code for analyzing trading day types from 30-minute CSV files.
+
+INSTRUCTIONS:
+1. Copy this entire code block
+2. Paste into a Google Colab cell
+3. Run the cell
+4. Follow the prompts to select symbols and date ranges
+5. Results will be saved to your Google Drive and auto-downloaded
+
+DATA REQUIREMENTS:
+- 30-minute CSV files must be in: /content/drive/MyDrive/StockData/
+- File naming: SYMBOL_30Min.csv (e.g., SPY_30Min.csv)
+- CSV columns: 't' (datetime), 'Open', 'High', 'Low', 'Close', 'Volume'
+
+CLASSIFICATION LOGIC (Matches ThinkScript):
+- Opening price (9:30 open) = reference point (H930 = L930)
+- First bar (9:30) skipped for directional detection
+- Last bar (3:30 PM) skipped for pullback detection
+- Two 30-min bars aggregated into each hourly session
+
+============================================================================
 """
 
 # ============================================================================
-# IMPORTS AND SETUP
+# STEP 1: MOUNT GOOGLE DRIVE
 # ============================================================================
+print("=" * 80)
+print("STEP 1: MOUNTING GOOGLE DRIVE")
+print("=" * 80)
+print("Please authorize access to your Google Drive when prompted...")
+
+from google.colab import drive
+drive.mount('/content/drive', force_remount=False)
+
+print("✓ Google Drive mounted successfully!")
+print("=" * 80)
+
+# ============================================================================
+# STEP 2: IMPORT REQUIRED LIBRARIES
+# ============================================================================
+print("\nSTEP 2: IMPORTING LIBRARIES")
+print("=" * 80)
+
 import pandas as pd
 import numpy as np
 import pytz
@@ -19,10 +54,7 @@ from datetime import datetime, time
 from typing import Dict, List, Tuple
 import os
 
-# Mount Google Drive
-from google.colab import drive
-drive.mount('/content/drive')
-print("Google Drive mounted successfully!")
+print("✓ All libraries imported successfully!")
 print("=" * 80)
 
 
@@ -350,50 +382,106 @@ class DayTypeClassifier30Min:
 
 
 # ============================================================================
-# CONFIGURATION AND EXECUTION
+# STEP 3: CONFIGURATION AND USER INPUT
 # ============================================================================
+print("\n" + "="*80)
+print("STEP 3: CONFIGURATION")
+print("="*80)
 
-# Configuration
+# Set directory paths
 DATA_DIR = '/content/drive/MyDrive/StockData'
 OUTPUT_DIR = '/content/drive/MyDrive/backtest_results'
 
-# User inputs
+print(f"Data directory: {DATA_DIR}")
+print(f"Output directory: {OUTPUT_DIR}")
+print("=" * 80)
+
+# ============================================================================
+# STEP 4: USER INPUT - SELECT SYMBOLS AND DATE RANGE
+# ============================================================================
 print("\n" + "="*80)
-print("DAY TYPE CLASSIFICATION TOOL")
+print("STEP 4: SELECT SYMBOLS AND DATE RANGE")
 print("="*80)
 
 # Ask for symbols
-symbols_input = input("Enter symbols to analyze (comma-separated, or 'ALL'): ")
+print("\n📊 SYMBOLS TO ANALYZE:")
+print("  Options:")
+print("    - Enter specific symbols: SPY,QQQ,AAPL")
+print("    - Or enter: ALL (to analyze all available symbols)")
+symbols_input = input("\nYour selection: ")
+
 if symbols_input.upper().strip() == 'ALL':
     SYMBOLS = None
+    print("✓ Will analyze ALL available symbols")
 else:
     SYMBOLS = [s.strip().upper() for s in symbols_input.split(',')]
+    print(f"✓ Selected symbols: {', '.join(SYMBOLS)}")
 
 # Ask for date range
-start_date_input = input("Enter start date (YYYY-MM-DD, or 'ALL'): ")
+print("\n📅 DATE RANGE:")
+print("  Options:")
+print("    - Enter specific dates: 2024-01-01")
+print("    - Or enter: ALL (for all available data)")
+
+start_date_input = input("\nStart date (YYYY-MM-DD or ALL): ")
 START_DATE = None if start_date_input.upper().strip() == 'ALL' else start_date_input.strip()
 
-end_date_input = input("Enter end date (YYYY-MM-DD, or 'ALL'): ")
+end_date_input = input("End date (YYYY-MM-DD or ALL): ")
 END_DATE = None if end_date_input.upper().strip() == 'ALL' else end_date_input.strip()
 
+if START_DATE or END_DATE:
+    print(f"✓ Date range: {START_DATE or 'earliest'} to {END_DATE or 'latest'}")
+else:
+    print("✓ Will analyze ALL available dates")
+
+print("=" * 80)
+
+# ============================================================================
+# STEP 5: RUN ANALYSIS
+# ============================================================================
 print("\n" + "="*80)
-print("Running Analysis...")
+print("STEP 5: RUNNING ANALYSIS")
 print("="*80)
 
 # Create classifier
 classifier = DayTypeClassifier30Min(data_directory=DATA_DIR)
 
 # Analyze
+print("\nAnalyzing data files...")
 classifier.analyze_all(symbols=SYMBOLS, start_date=START_DATE, end_date=END_DATE)
 
-# Print results
+# ============================================================================
+# STEP 6: DISPLAY RESULTS
+# ============================================================================
+print("\n" + "="*80)
+print("STEP 6: RESULTS")
+print("="*80)
+
 classifier.print_results()
 
-# Export to CSV
+# ============================================================================
+# STEP 7: EXPORT TO CSV
+# ============================================================================
+print("\n" + "="*80)
+print("STEP 7: EXPORTING RESULTS")
+print("="*80)
+
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 output_file = os.path.join(OUTPUT_DIR, 'daytype_classification_results.csv')
-classifier.export_to_csv(output_file)
+print(f"\nSaving to: {output_file}")
 
+result_df = classifier.export_to_csv(output_file)
+
+# ============================================================================
+# ANALYSIS COMPLETE
+# ============================================================================
 print("\n" + "="*80)
-print("Analysis Complete!")
+print("✓ ANALYSIS COMPLETE!")
 print("="*80)
+print(f"\n📁 Results saved to: {output_file}")
+print("📥 CSV file has been downloaded to your computer")
+print("\nYou can now:")
+print("  - View the downloaded CSV file")
+print("  - Find it in your Google Drive at: MyDrive/backtest_results/")
+print("  - Review the classification breakdown above")
+print("\n" + "="*80)
