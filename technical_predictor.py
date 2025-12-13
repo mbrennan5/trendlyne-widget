@@ -126,6 +126,7 @@ def load_symbol_daily_data(symbol: str, start_year: int = None, end_year: int = 
     combined = pd.concat(all_data, ignore_index=True)
     combined = combined.sort_values('datetime')
     combined['Date'] = combined['datetime'].dt.date
+    combined['Time'] = combined['datetime'].dt.time
 
     # Create daily OHLCV
     daily = combined.groupby('Date').agg({
@@ -135,6 +136,15 @@ def load_symbol_daily_data(symbol: str, start_year: int = None, end_year: int = 
         'Close': 'last',
         'Volume': 'sum'
     }).reset_index()
+
+    # Get first 30-minute bar volume for each day (9:30-10:00)
+    first_30min = combined[combined['Time'] <= pd.Timestamp('10:00:00').time()]
+    first_30min_vol = first_30min.groupby('Date')['Volume'].first().reset_index()
+    first_30min_vol.columns = ['Date', 'First_30Min_Volume']
+
+    # Merge first 30-min volume
+    daily = daily.merge(first_30min_vol, on='Date', how='left')
+    daily['First_30Min_Volume'] = daily['First_30Min_Volume'].fillna(0)
 
     daily['Date'] = pd.to_datetime(daily['Date'])
     daily['Symbol'] = symbol
@@ -240,6 +250,52 @@ def calculate_indicators(df: pd.DataFrame) -> pd.DataFrame:
     df['Large_Gap_Down'] = (df['Gap_Pct'] < -1.5).astype(int)
     df['Large_Gap_Any'] = ((df['Gap_Pct'].abs()) > 1.5).astype(int)
 
+    # GapStat - Normalized gap statistic (direction-specific, like TOS indicator)
+    # Note: TOS uses * 10, not * 100, so we need Gap_Pct_TOS
+    df['Gap_Pct_TOS'] = (df['Gap'] / df['PrevClose']) * 10  # TOS convention
+
+    # Separate gaps by direction for conditional statistics
+    df['Gap_Pct_TOS_Up'] = df['Gap_Pct_TOS'].where(df['Gap_Pct_TOS'] > 0, np.nan)
+    df['Gap_Pct_TOS_Down'] = df['Gap_Pct_TOS'].where(df['Gap_Pct_TOS'] < 0, np.nan)
+
+    # Calculate rolling averages and standard deviations (ignores NaN)
+    lookback = 250
+    df['AvgGapUp'] = df['Gap_Pct_TOS_Up'].rolling(lookback, min_periods=1).mean()
+    df['AvgGapDown'] = df['Gap_Pct_TOS_Down'].rolling(lookback, min_periods=1).mean()
+    df['StdevGapUp'] = df['Gap_Pct_TOS_Up'].rolling(lookback, min_periods=1).std()
+    df['StdevGapDown'] = df['Gap_Pct_TOS_Down'].rolling(lookback, min_periods=1).std()
+
+    # Normalized gap (avg + stdev, like Enhanced Segregated GapStat)
+    df['NormalizedGapUp'] = df['AvgGapUp'].fillna(0.1) + df['StdevGapUp'].fillna(0)
+    df['NormalizedGapDown'] = df['AvgGapDown'].fillna(-0.1) + df['StdevGapDown'].fillna(0)
+
+    # Select normalization factor based on gap direction
+    df['NormFactor'] = np.where(df['Gap'] > 0,
+                                  df['NormalizedGapUp'],
+                                  df['NormalizedGapDown'].abs())
+
+    # Calculate GapStat
+    df['GapStat'] = np.where((df['NormFactor'].isna()) | (df['NormFactor'] == 0),
+                              0,
+                              df['Gap_Pct_TOS'] / df['NormFactor'])
+
+    # Binary indicators for extreme GapStat values
+    df['High_GapStat'] = (df['GapStat'] > 2).astype(int)
+    df['Low_GapStat'] = (df['GapStat'] < -2).astype(int)
+    df['Extreme_GapStat'] = ((df['GapStat'].abs()) > 2).astype(int)
+
+    # First 30-minute bar volume indicators
+    if 'First_30Min_Volume' in df.columns:
+        df['Avg_First_30Min_Vol'] = df['First_30Min_Volume'].rolling(20, min_periods=1).mean()
+        df['First_30Min_Vol_Ratio'] = df['First_30Min_Volume'] / df['Avg_First_30Min_Vol']
+        df['High_First_30Min_Vol'] = (df['First_30Min_Vol_Ratio'] > 1.5).astype(int)
+        df['Low_First_30Min_Vol'] = (df['First_30Min_Vol_Ratio'] < 0.7).astype(int)
+    else:
+        # If column doesn't exist, create dummy columns
+        df['First_30Min_Vol_Ratio'] = np.nan
+        df['High_First_30Min_Vol'] = 0
+        df['Low_First_30Min_Vol'] = 0
+
     # Consecutive range/directional days (will be added after merge)
 
     return df
@@ -340,8 +396,12 @@ indicator_columns = [
     'Vol_Contraction', 'Vol_Expansion',
     # Volume
     'High_Volume', 'Low_Volume',
+    # First 30-Min Volume
+    'High_First_30Min_Vol', 'Low_First_30Min_Vol',
     # Gaps
     'Gap_Up', 'Gap_Down', 'Large_Gap_Up', 'Large_Gap_Down', 'Large_Gap_Any',
+    # GapStat (normalized gap)
+    'High_GapStat', 'Low_GapStat', 'Extreme_GapStat',
     # Previous day patterns
     'Prev_IsRange', 'Prev_IsDirectional',
     # Consecutive patterns
@@ -350,7 +410,11 @@ indicator_columns = [
 
 continuous_indicators = [
     'ADR_ZScore', 'ATR_ZScore', 'BB_Width_ZScore', 'Volume_Ratio',
-    'Gap_Pct', 'Consec_Range', 'Range_Pct', 'TR_Pct'
+    'Gap_Pct', 'Consec_Range', 'Range_Pct', 'TR_Pct',
+    # GapStat (TOS-style normalized gap)
+    'GapStat',
+    # First 30-Min Volume Ratio
+    'First_30Min_Vol_Ratio'
 ]
 
 results = []
@@ -504,6 +568,15 @@ momentum_combinations = [
     # Multiple momentum signals
     ('Large_Gap_Any', 'High_Volume'),
     ('Gap_Up', 'High_Volume'),
+    # GapStat combinations (normalized gap)
+    ('Extreme_GapStat', 'High_Volume'),
+    ('Extreme_GapStat', 'WR2'),
+    ('High_GapStat', 'High_Volume'),
+    ('High_GapStat', 'WR3'),
+    # First 30-Min Volume combinations
+    ('High_First_30Min_Vol', 'Large_Gap_Any'),
+    ('High_First_30Min_Vol', 'WR2'),
+    ('High_First_30Min_Vol', 'Gap_Up'),
 ]
 
 print("\n--- CONTRACTION COMBINATIONS (NR + Low Volume + Consecutive Range) ---")
@@ -666,8 +739,12 @@ export_df = predictive_df[[
     'Vol_Contraction', 'Vol_Expansion',
     # Volume
     'Volume_Ratio', 'High_Volume', 'Low_Volume',
+    # First 30-Min Volume
+    'First_30Min_Vol_Ratio', 'High_First_30Min_Vol', 'Low_First_30Min_Vol',
     # Gaps
     'Gap_Pct', 'Gap_Up', 'Gap_Down', 'Large_Gap_Up', 'Large_Gap_Down', 'Large_Gap_Any',
+    # GapStat (TOS-style normalized gap)
+    'GapStat', 'High_GapStat', 'Low_GapStat', 'Extreme_GapStat',
     # Previous day patterns
     'Prev_DayType', 'Prev_IsRange', 'Prev_IsDirectional',
     'Consec_Range', 'High_Consec_Range',
