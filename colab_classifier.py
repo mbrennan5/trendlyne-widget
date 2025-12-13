@@ -40,18 +40,30 @@ class DayTypeClassifier30Min:
 
     def load_30min_data(self, file_path: Path) -> pd.DataFrame:
         df = pd.read_csv(file_path)
+
+        # Handle datetime column
         if 't' in df.columns:
-            df['datetime'] = pd.to_datetime(df['t'])
+            df['datetime'] = pd.to_datetime(df['t'], utc=True)
         elif 'datetime' in df.columns:
-            df['datetime'] = pd.to_datetime(df['datetime'])
+            df['datetime'] = pd.to_datetime(df['datetime'], utc=True)
         else:
-            df['datetime'] = pd.to_datetime(df.iloc[:, 0])
+            df['datetime'] = pd.to_datetime(df.iloc[:, 0], utc=True)
+
+        # Rename columns
         df = df.rename(columns={'open': 'Open', 'high': 'High', 'low': 'Low', 'close': 'Close', 'volume': 'Volume'})
+
+        # Set datetime as index
         df.set_index('datetime', inplace=True)
-        if df.index.tz is None:
-            df.index = df.index.tz_localize(self.timezone)
-        else:
+
+        # Convert to target timezone
+        try:
             df.index = df.index.tz_convert(self.timezone)
+        except Exception as e:
+            print(f"Warning: Timezone conversion issue - {e}")
+            # If timezone conversion fails, localize first
+            if not hasattr(df.index, 'tz') or df.index.tz is None:
+                df.index = pd.DatetimeIndex(df.index).tz_localize('UTC').tz_convert(self.timezone)
+
         return df
 
     def aggregate_to_hourly(self, df_30min: pd.DataFrame) -> pd.DataFrame:
