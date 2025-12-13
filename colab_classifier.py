@@ -1,8 +1,9 @@
 """
 ============================================================================
-DAY TYPE CLASSIFIER - 30-MINUTE DATA (GOOGLE COLAB)
+DAY TYPE CLASSIFIER - 30-MINUTE DATA (GOOGLE COLAB) - MULTI-YEAR VERSION
 ============================================================================
 Copy this entire code block into a Google Colab cell and run it.
+Handles multiple year files per symbol: SYMBOL_30Min_YEAR_startdate_enddate.csv
 ============================================================================
 """
 
@@ -18,6 +19,7 @@ from pathlib import Path
 from datetime import datetime, time
 from typing import Dict, List, Tuple
 import os
+import re
 
 # Classifier Class
 class DayTypeClassifier30Min:
@@ -30,46 +32,119 @@ class DayTypeClassifier30Min:
         self.timezone = pytz.timezone(timezone)
         self.results = {}
 
-    def find_30min_files(self) -> Dict[str, Path]:
-        files = {}
+    def find_30min_files(self) -> Dict[str, List[Tuple[int, Path]]]:
+        """
+        Find all 30-minute files and group by symbol with year information.
+        Returns: {symbol: [(year, file_path), ...]}
+        """
+        symbol_files = {}
+
         for file_path in self.data_directory.glob('*30Min*.csv'):
             filename = file_path.stem
-            symbol = filename.split('_')[0].split('-')[0].upper()
-            files[symbol] = file_path
-        return files
 
-    def load_30min_data(self, file_path: Path) -> pd.DataFrame:
-        df = pd.read_csv(file_path)
+            # Extract symbol - everything before first underscore
+            parts = filename.split('_')
+            if len(parts) < 2:
+                continue
+            symbol = parts[0].upper()
 
-        # Diagnostic: Show how many rows loaded
-        print(f"  Loaded {len(df):,} rows from CSV", end='')
+            # Try to extract year from filename
+            # Pattern: SYMBOL_30Min_YEAR_startdate_enddate
+            year = None
+            for part in parts:
+                if part.isdigit() and len(part) == 4 and 2000 <= int(part) <= 2100:
+                    year = int(part)
+                    break
 
-        # Handle datetime column
-        if 't' in df.columns:
-            df['datetime'] = pd.to_datetime(df['t'], utc=True)
-        elif 'datetime' in df.columns:
-            df['datetime'] = pd.to_datetime(df['datetime'], utc=True)
-        else:
-            df['datetime'] = pd.to_datetime(df.iloc[:, 0], utc=True)
+            if year is None:
+                print(f"  Warning: Could not extract year from {filename}, skipping")
+                continue
 
-        # Rename columns
-        df = df.rename(columns={'open': 'Open', 'high': 'High', 'low': 'Low', 'close': 'Close', 'volume': 'Volume'})
+            if symbol not in symbol_files:
+                symbol_files[symbol] = []
+            symbol_files[symbol].append((year, file_path))
 
-        # Set datetime as index
-        df.set_index('datetime', inplace=True)
+        # Sort each symbol's files by year
+        for symbol in symbol_files:
+            symbol_files[symbol].sort(key=lambda x: x[0])
 
-        # Convert to target timezone
-        try:
-            df.index = df.index.tz_convert(self.timezone)
-        except Exception as e:
-            if not hasattr(df.index, 'tz') or df.index.tz is None:
-                df.index = pd.DatetimeIndex(df.index).tz_localize('UTC').tz_convert(self.timezone)
+        return symbol_files
 
-        # Diagnostic: Show date range
-        if len(df) > 0:
-            print(f" | Date range: {df.index.min().date()} to {df.index.max().date()}")
+    def load_multi_year_data(self, symbol: str, year_files: List[Tuple[int, Path]],
+                             start_year: int = None, end_year: int = None) -> pd.DataFrame:
+        """
+        Load and concatenate multiple year files for a symbol.
+        """
+        # Filter files by year range
+        if start_year is None:
+            start_year = min(year for year, _ in year_files)
+        if end_year is None:
+            end_year = max(year for year, _ in year_files)
 
-        return df
+        filtered_files = [(year, path) for year, path in year_files
+                         if start_year <= year <= end_year]
+
+        if not filtered_files:
+            print(f"  No files found for {symbol} in year range {start_year}-{end_year}")
+            return pd.DataFrame()
+
+        print(f"  Loading {len(filtered_files)} file(s) for years {start_year}-{end_year}:")
+
+        all_dataframes = []
+
+        for year, file_path in filtered_files:
+            print(f"    - {year}: {file_path.name}", end=' ')
+
+            try:
+                df = pd.read_csv(file_path)
+                print(f"({len(df):,} rows)", end='')
+
+                # Handle datetime column
+                if 't' in df.columns:
+                    df['datetime'] = pd.to_datetime(df['t'], utc=True)
+                elif 'datetime' in df.columns:
+                    df['datetime'] = pd.to_datetime(df['datetime'], utc=True)
+                else:
+                    df['datetime'] = pd.to_datetime(df.iloc[:, 0], utc=True)
+
+                # Rename columns
+                df = df.rename(columns={'open': 'Open', 'high': 'High', 'low': 'Low', 'close': 'Close', 'volume': 'Volume'})
+
+                # Set datetime as index
+                df.set_index('datetime', inplace=True)
+
+                # Convert to target timezone
+                try:
+                    df.index = df.index.tz_convert(self.timezone)
+                except Exception as e:
+                    if not hasattr(df.index, 'tz') or df.index.tz is None:
+                        df.index = pd.DatetimeIndex(df.index).tz_localize('UTC').tz_convert(self.timezone)
+
+                # Show date range
+                if len(df) > 0:
+                    print(f" → {df.index.min().date()} to {df.index.max().date()}")
+
+                all_dataframes.append(df)
+
+            except Exception as e:
+                print(f" ✗ Error: {e}")
+                continue
+
+        if not all_dataframes:
+            return pd.DataFrame()
+
+        # Concatenate all dataframes
+        combined_df = pd.concat(all_dataframes)
+
+        # Sort by datetime
+        combined_df.sort_index(inplace=True)
+
+        # Remove duplicates if any
+        combined_df = combined_df[~combined_df.index.duplicated(keep='first')]
+
+        print(f"  Combined: {len(combined_df):,} total rows | {combined_df.index.min().date()} to {combined_df.index.max().date()}")
+
+        return combined_df
 
     def aggregate_to_hourly(self, df_30min: pd.DataFrame) -> pd.DataFrame:
         df_rth = df_30min.between_time(self.RTH_START, self.RTH_END).copy()
@@ -186,12 +261,14 @@ class DayTypeClassifier30Min:
 
         return classification, debug_info
 
-    def analyze_symbol(self, symbol: str, file_path: Path, start_date: str = None, end_date: str = None) -> pd.DataFrame:
+    def analyze_symbol(self, symbol: str, year_files: List[Tuple[int, Path]],
+                       start_year: int = None, end_year: int = None,
+                       start_date: str = None, end_date: str = None) -> pd.DataFrame:
         print(f"\n{'='*60}")
         print(f"Analyzing {symbol}")
         print(f"{'='*60}")
 
-        df_30min = self.load_30min_data(file_path)
+        df_30min = self.load_multi_year_data(symbol, year_files, start_year, end_year)
         if df_30min.empty:
             print(f"  ✗ No data loaded")
             return pd.DataFrame()
@@ -235,21 +312,35 @@ class DayTypeClassifier30Min:
         print(f"  ✓ Classification complete")
         return pd.DataFrame(results)
 
-    def analyze_all(self, symbols: List[str] = None, start_date: str = None, end_date: str = None) -> Dict[str, pd.DataFrame]:
-        files = self.find_30min_files()
-        if not files:
+    def analyze_all(self, symbols: List[str] = None,
+                    start_year: int = None, end_year: int = None,
+                    start_date: str = None, end_date: str = None) -> Dict[str, pd.DataFrame]:
+        symbol_files = self.find_30min_files()
+        if not symbol_files:
             print("No 30-minute files found!")
             return {}
-        print(f"Found {len(files)} symbol(s): {', '.join(sorted(files.keys()))}")
+
+        print(f"\nFound {len(symbol_files)} symbol(s) with year files:")
+        for symbol, year_list in sorted(symbol_files.items()):
+            years = [year for year, _ in year_list]
+            print(f"  {symbol}: {len(year_list)} file(s) → years {min(years)}-{max(years)}")
+
         if symbols:
-            files = {s: p for s, p in files.items() if s in symbols}
-        for symbol, file_path in files.items():
+            symbol_files = {s: f for s, f in symbol_files.items() if s in symbols}
+            if not symbol_files:
+                print(f"Warning: None of the requested symbols found!")
+                return {}
+
+        for symbol, year_files in symbol_files.items():
             try:
-                results_df = self.analyze_symbol(symbol, file_path, start_date, end_date)
+                results_df = self.analyze_symbol(symbol, year_files, start_year, end_year, start_date, end_date)
                 if not results_df.empty:
                     self.results[symbol] = results_df
             except Exception as e:
                 print(f"Error analyzing {symbol}: {e}")
+                import traceback
+                traceback.print_exc()
+
         return self.results
 
     def print_results(self):
@@ -288,21 +379,34 @@ OUTPUT_DIR = '/content/drive/MyDrive/backtest_results'
 
 # User Input
 print("\n" + "="*80)
-print("DAY TYPE CLASSIFIER")
+print("DAY TYPE CLASSIFIER - MULTI-YEAR VERSION")
 print("="*80)
 symbols_input = input("Enter symbols (comma-separated, or 'ALL'): ")
 SYMBOLS = None if symbols_input.upper().strip() == 'ALL' else [s.strip().upper() for s in symbols_input.split(',')]
-start_date_input = input("Start date (YYYY-MM-DD or 'ALL'): ")
-START_DATE = None if start_date_input.upper().strip() == 'ALL' else start_date_input.strip()
-end_date_input = input("End date (YYYY-MM-DD or 'ALL'): ")
-END_DATE = None if end_date_input.upper().strip() == 'ALL' else end_date_input.strip()
+
+print("\n" + "-"*80)
+print("YEAR RANGE (files are per-year: SYMBOL_30Min_YEAR_startdate_enddate.csv)")
+print("-"*80)
+start_year_input = input("Start YEAR (e.g., 2020, or press Enter for all): ")
+START_YEAR = None if start_year_input.strip() == '' else int(start_year_input.strip())
+end_year_input = input("End YEAR (e.g., 2025, or press Enter for all): ")
+END_YEAR = None if end_year_input.strip() == '' else int(end_year_input.strip())
+
+print("\n" + "-"*80)
+print("DATE RANGE (optional - further filter by specific dates)")
+print("-"*80)
+start_date_input = input("Start date (YYYY-MM-DD or press Enter for all): ")
+START_DATE = None if start_date_input.strip() == '' else start_date_input.strip()
+end_date_input = input("End date (YYYY-MM-DD or press Enter for all): ")
+END_DATE = None if end_date_input.strip() == '' else end_date_input.strip()
 
 # Run Analysis
 print("\n" + "="*80)
 print("RUNNING ANALYSIS...")
 print("="*80)
 classifier = DayTypeClassifier30Min(data_directory=DATA_DIR)
-classifier.analyze_all(symbols=SYMBOLS, start_date=START_DATE, end_date=END_DATE)
+classifier.analyze_all(symbols=SYMBOLS, start_year=START_YEAR, end_year=END_YEAR,
+                       start_date=START_DATE, end_date=END_DATE)
 classifier.print_results()
 
 # Export
