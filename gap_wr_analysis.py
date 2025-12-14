@@ -491,7 +491,7 @@ ax1.grid(axis='x', alpha=0.3)
 ax2 = axes[0, 1]
 gap_size_results = results_df[results_df['Condition'].str.contains('Gap \+')]
 if len(gap_size_results) > 0:
-    gap_sizes = gap_size_results.groupby(gap_size_results['Condition'].str.extract(r'(\w+ Gap)', expand=False)[0])['Edge'].mean().sort_values()
+    gap_sizes = gap_size_results.groupby(gap_size_results['Condition'].str.extract(r'(\w+ Gap)', expand=False))['Edge'].mean().sort_values()
     ax2.barh(range(len(gap_sizes)), gap_sizes.values, color='steelblue')
     ax2.set_yticks(range(len(gap_sizes)))
     ax2.set_yticklabels(gap_sizes.index)
