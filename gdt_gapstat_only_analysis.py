@@ -1,14 +1,20 @@
 """
 ============================================================================
-GDT DAY# + GAPSTAT + GAP DIRECTION ANALYSIS
+GDT DAY# + GAPSTAT + GAP DIRECTION ANALYSIS (SAME-DAY PREDICTION)
 ============================================================================
-Analyzes gap behavior across GDT momentum cycle days.
+Analyzes gap behavior for SAME-DAY directional prediction.
+
+LOGIC: If YESTERDAY was GDT Day X + THIS MORNING we gapped Y
+       → Will TODAY be directional (by close)?
 
 Tests:
-1. GDT Day# (Buy_Day1-4, Sell_Day1-4)
-2. GapStat size (>1.0, >1.5, >2.0, >2.5)
-3. Gap direction vs 5-day SMA trend (with trend vs against trend)
-4. Gap size buckets (small, medium, large, xlarge)
+1. YESTERDAY's GDT Day# (Buy_Day1-4, Sell_Day1-4)
+2. THIS MORNING's gap characteristics:
+   - GapStat size (>1.0, >1.5, >2.0, >2.5)
+   - Gap direction vs 5-day SMA trend (with trend vs against trend)
+   - Gap size buckets (small, medium, large, xlarge)
+   - Range size vs usual ADR
+   - Closing range % (where close is within day's range)
 
 No WR indicators - pure gap behavior analysis.
 
@@ -365,42 +371,59 @@ merged_df = indicators_df.merge(
     how='inner'
 )
 
-# Create next-day target
+# SAME-DAY PREDICTION SETUP:
+# - YESTERDAY's GDT Day# tells us where we are in the momentum cycle
+# - THIS MORNING's gap characteristics (at open)
+# - Predict: Will TODAY be directional (by close)?
+
 merged_df = merged_df.sort_values(['Symbol', 'Date'])
-merged_df['Next_IsDirectional'] = merged_df.groupby('Symbol')['IsDirectional'].shift(-1)
-predictive_df = merged_df.dropna(subset=['Next_IsDirectional']).copy()
+
+# Get YESTERDAY's GDT Day# (shift by 1)
+merged_df['Prev_GDT_DayType'] = merged_df.groupby('Symbol')['GDT_DayType'].shift(1)
+
+# Target is TODAY's directional outcome
+merged_df['Today_IsDirectional'] = merged_df['IsDirectional']
+
+# Filter to days where we have yesterday's GDT context
+predictive_df = merged_df.dropna(subset=['Prev_GDT_DayType']).copy()
 
 print(f"✓ Created predictive dataset with {len(predictive_df):,} samples")
+print(f"  Logic: If YESTERDAY was GDT Day X + THIS MORNING gapped Y → predict TODAY's outcome")
 
-baseline = predictive_df['Next_IsDirectional'].mean() * 100
+baseline = predictive_df['Today_IsDirectional'].mean() * 100
 print(f"  Overall baseline: {baseline:.1f}%")
 
-# Show GDT Day distribution
-print("\nGDT Day# Distribution:")
-gdt_counts = predictive_df['GDT_DayType'].value_counts().sort_index()
+# Show YESTERDAY's GDT Day distribution
+print("\nYESTERDAY's GDT Day# Distribution:")
+gdt_counts = predictive_df['Prev_GDT_DayType'].value_counts().sort_index()
 for day_type, count in gdt_counts.items():
     if day_type:
         pct = count / len(predictive_df) * 100
-        baseline_gdt = predictive_df[predictive_df['GDT_DayType'] == day_type]['Next_IsDirectional'].mean() * 100
-        print(f"  {day_type:15s}: {count:5,} ({pct:4.1f}%) | Baseline: {baseline_gdt:5.1f}%")
+        baseline_gdt = predictive_df[predictive_df['Prev_GDT_DayType'] == day_type]['Today_IsDirectional'].mean() * 100
+        print(f"  {day_type:15s}: {count:5,} ({pct:4.1f}%) | Today Directional: {baseline_gdt:5.1f}%")
 
 # ============================================================================
-# STEP 5: Analyze Gap Behavior by GDT Day#
+# STEP 5: Analyze Gap Behavior by YESTERDAY's GDT Day#
 # ============================================================================
 print("\n" + "="*80)
-print("STEP 5: GAP ANALYSIS BY GDT DAY#")
+print("STEP 5: GAP ANALYSIS BY YESTERDAY'S GDT DAY#")
 print("="*80)
+print("Logic: If YESTERDAY was GDT Day X + THIS MORNING gapped Y → does TODAY go directional?")
 
 def analyze_gap_by_gdt(df: pd.DataFrame, condition_name: str, condition_mask: pd.Series, gdt_day: str) -> Dict:
-    """Analyze a gap condition on a specific GDT day"""
+    """Analyze gap condition when YESTERDAY was a specific GDT day
 
-    subset = df[condition_mask & (df['GDT_DayType'] == gdt_day)]
+    Logic: If YESTERDAY was {gdt_day} AND this morning we see {condition_name}
+           → what % of time does TODAY become directional?
+    """
+
+    subset = df[condition_mask & (df['Prev_GDT_DayType'] == gdt_day)]
 
     if len(subset) < 10:
         return None
 
-    dir_rate = subset['Next_IsDirectional'].mean() * 100
-    baseline = df[df['GDT_DayType'] == gdt_day]['Next_IsDirectional'].mean() * 100
+    dir_rate = subset['Today_IsDirectional'].mean() * 100
+    baseline = df[df['Prev_GDT_DayType'] == gdt_day]['Today_IsDirectional'].mean() * 100
     edge = dir_rate - baseline
 
     return {
@@ -467,9 +490,9 @@ results = []
 gdt_days = ['Buy_Day1', 'Buy_Day2', 'Buy_Day3', 'Buy_Day4',
             'Sell_Day1', 'Sell_Day2', 'Sell_Day3', 'Sell_Day4']
 
-print("\nTesting gap conditions across GDT days...")
+print("\nTesting gap conditions across YESTERDAY's GDT days...")
 for gdt_day in gdt_days:
-    print(f"\n{gdt_day}:")
+    print(f"\nIf YESTERDAY was {gdt_day}:")
     print("-" * 80)
 
     for condition_name, condition_mask in gap_conditions:
@@ -489,14 +512,15 @@ print("="*80)
 results_df = pd.DataFrame(results)
 results_df = results_df.sort_values('Abs_Edge', ascending=False)
 
-print("\nTop 25 Strongest Edges (Gap Condition + GDT Day):")
+print("\nTop 25 Strongest Edges (TODAY's Gap + YESTERDAY's GDT Day):")
 print("-" * 80)
 print(results_df[['Condition', 'GDT_Day', 'Edge', 'Directional%', 'Count']].head(25).to_string(index=False))
 
 # Best condition for each GDT day
 print("\n" + "="*80)
-print("BEST GAP CONDITION FOR EACH GDT DAY")
+print("BEST GAP SETUP FOR EACH OF YESTERDAY'S GDT DAYS")
 print("="*80)
+print("(i.e., If YESTERDAY was Buy_Day1, what gap this morning works best?)")
 
 for gdt_day in gdt_days:
     day_results = results_df[results_df['GDT_Day'] == gdt_day].sort_values('Edge', ascending=False)
@@ -506,8 +530,9 @@ for gdt_day in gdt_days:
 
 # Best GDT day for each condition
 print("\n" + "="*80)
-print("BEST GDT DAY FOR EACH GAP CONDITION")
+print("BEST YESTERDAY GDT DAY FOR EACH GAP CONDITION")
 print("="*80)
+print("(i.e., Gap Against Trend works best when YESTERDAY was which GDT day?)")
 
 for condition_name, _ in gap_conditions:
     cond_results = results_df[results_df['Condition'] == condition_name].sort_values('Edge', ascending=False)
@@ -528,7 +553,7 @@ print(f"✓ Saved to: {output_file}")
 
 # Visualizations
 fig, axes = plt.subplots(2, 2, figsize=(18, 12))
-fig.suptitle(f'GDT Day# × GapStat × Gap Direction - {group_label}', fontsize=16, fontweight='bold')
+fig.suptitle(f'YESTERDAY GDT Day# + THIS MORNING Gap → TODAY Directional - {group_label}', fontsize=14, fontweight='bold')
 
 # 1. Top edges
 ax1 = axes[0, 0]
@@ -536,9 +561,9 @@ top_20 = results_df.head(20).sort_values('Edge')
 colors = ['green' if x > 0 else 'red' for x in top_20['Edge']]
 ax1.barh(range(len(top_20)), top_20['Edge'], color=colors)
 ax1.set_yticks(range(len(top_20)))
-ax1.set_yticklabels([f"{row.Condition[:18]} ({row.GDT_Day})" for _, row in top_20.iterrows()], fontsize=7)
+ax1.set_yticklabels([f"{row.Condition[:18]} (Yest={row.GDT_Day})" for _, row in top_20.iterrows()], fontsize=7)
 ax1.set_xlabel('Edge (%)')
-ax1.set_title('Top 20 Edges (Gap Condition + GDT Day)')
+ax1.set_title('Top 20 Edges (TODAY Gap + YESTERDAY GDT)')
 ax1.axvline(x=0, color='black', linestyle='--', linewidth=1)
 ax1.grid(axis='x', alpha=0.3)
 
@@ -601,8 +626,9 @@ except:
 print("\n" + "="*80)
 print("ANALYSIS COMPLETE!")
 print("="*80)
-print("\nKey Insights:")
-print("- Which GDT days favor gap with trend vs against trend?")
-print("- What GapStat threshold works best on each GDT day?")
-print("- Which gap sizes predict directional days on which GDT days?")
+print("\nKey Insights - SAME DAY PREDICTION:")
+print("- If YESTERDAY was Buy_Day2 and THIS MORNING we gap against trend → TODAY directional?")
+print("- Which gaps work best when YESTERDAY was a specific GDT day?")
+print("- Does closing position (top/bottom quarter) boost the edge?")
+print("- Wide range days on gaps against trend = reversal signal?")
 print("="*80)
