@@ -256,6 +256,9 @@ def calculate_indicators(df: pd.DataFrame) -> pd.DataFrame:
     df['Gap_Up'] = (df['Gap_Pct'] > 0.5).astype(int)
     df['Gap_Down'] = (df['Gap_Pct'] < -0.5).astype(int)
 
+    # % Change from open (for TODAY's performance)
+    df['Pct_Change_From_Open'] = ((df['Close'] - df['Open']) / df['Open']) * 100
+
     # Gap vs Trend alignment
     df['Gap_With_Trend'] = 0
     df['Gap_Against_Trend'] = 0
@@ -427,25 +430,41 @@ def analyze_gap_by_gdt(df: pd.DataFrame, condition_name: str, condition_mask: pd
 
     Logic: If YESTERDAY was {gdt_day} AND this morning we see {condition_name}
            → what % of time does TODAY become directional?
+           → what is TODAY's avg closing range %?
+           → what is TODAY's avg % change from open?
     """
 
     subset = df[condition_mask & (df['Prev_GDT_DayType'] == gdt_day)]
+    baseline_gdt = df[df['Prev_GDT_DayType'] == gdt_day]
 
     if len(subset) < 10:
         return None
 
+    # Directional rate
     dir_rate = subset['Today_IsDirectional'].mean() * 100
-    baseline = df[df['Prev_GDT_DayType'] == gdt_day]['Today_IsDirectional'].mean() * 100
-    edge = dir_rate - baseline
+    baseline_dir = baseline_gdt['Today_IsDirectional'].mean() * 100
+    edge = dir_rate - baseline_dir
+
+    # TODAY's closing range % (where close is within today's range)
+    avg_close_range = subset['Close_Range_Pct'].mean()
+    baseline_close_range = baseline_gdt['Close_Range_Pct'].mean()
+
+    # TODAY's % change from open
+    avg_pct_change = subset['Pct_Change_From_Open'].mean()
+    baseline_pct_change = baseline_gdt['Pct_Change_From_Open'].mean()
 
     return {
         'Condition': condition_name,
         'GDT_Day': gdt_day,
         'Count': len(subset),
         'Directional%': dir_rate,
-        'Baseline%': baseline,
+        'Baseline%': baseline_dir,
         'Edge': edge,
-        'Abs_Edge': abs(edge)
+        'Abs_Edge': abs(edge),
+        'Avg_Close_Range%': avg_close_range,
+        'Baseline_Close_Range%': baseline_close_range,
+        'Avg_%_Change': avg_pct_change,
+        'Baseline_%_Change': baseline_pct_change
     }
 
 # Gap conditions to test
@@ -512,7 +531,7 @@ for gdt_day in gdt_days:
 
         if result:
             results.append(result)
-            print(f"  {result['Condition']:30s}: {result['Edge']:+6.2f}% edge | {result['Directional%']:5.1f}% (n={result['Count']:5,})")
+            print(f"  {result['Condition']:30s}: {result['Edge']:+6.2f}% edge | Dir:{result['Directional%']:5.1f}% | CloseRng:{result['Avg_Close_Range%']:5.1f}% | Chg:{result['Avg_%_Change']:+5.2f}% | n={result['Count']:5,}")
 
 # ============================================================================
 # STEP 6: Rankings & Analysis
@@ -526,7 +545,7 @@ results_df = results_df.sort_values('Abs_Edge', ascending=False)
 
 print("\nTop 25 Strongest Edges (TODAY's Gap + YESTERDAY's GDT Day):")
 print("-" * 80)
-print(results_df[['Condition', 'GDT_Day', 'Edge', 'Directional%', 'Count']].head(25).to_string(index=False))
+print(results_df[['Condition', 'GDT_Day', 'Edge', 'Directional%', 'Avg_Close_Range%', 'Avg_%_Change', 'Count']].head(25).to_string(index=False))
 
 # Best condition for each GDT day
 print("\n" + "="*80)
@@ -551,6 +570,29 @@ for condition_name, _ in gap_conditions:
     if len(cond_results) > 0:
         best = cond_results.iloc[0]
         print(f"{condition_name:30s}: {best['GDT_Day']:15s} | {best['Edge']:+6.2f}% edge (n={best['Count']:,})")
+
+# TODAY's CLOSING BEHAVIOR ANALYSIS
+print("\n" + "="*80)
+print("TODAY'S CLOSING RANGE % ANALYSIS")
+print("="*80)
+print("Top 15 setups by avg closing range % (higher = closes near high of day)")
+print("-" * 80)
+
+top_close_range = results_df.nlargest(15, 'Avg_Close_Range%')
+for _, row in top_close_range.iterrows():
+    print(f"{row['Condition']:30s} ({row['GDT_Day']:12s}): AvgCloseRng {row['Avg_Close_Range%']:5.1f}% | Edge {row['Edge']:+6.2f}% | n={row['Count']:,}")
+
+print("\n" + "="*80)
+print("TODAY'S % CHANGE FROM OPEN ANALYSIS")
+print("="*80)
+print("Top 15 setups by avg % change from open (biggest moves)")
+print("-" * 80)
+
+# Sort by absolute value of % change to get biggest moves
+results_df['Abs_Pct_Change'] = results_df['Avg_%_Change'].abs()
+top_pct_change = results_df.nlargest(15, 'Abs_Pct_Change')
+for _, row in top_pct_change.iterrows():
+    print(f"{row['Condition']:30s} ({row['GDT_Day']:12s}): AvgChg {row['Avg_%_Change']:+6.2f}% | CloseRng {row['Avg_Close_Range%']:5.1f}% | n={row['Count']:,}")
 
 # ============================================================================
 # STEP 7: Save & Visualize
