@@ -3,12 +3,406 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Trendlyne Widget</title>
+    <title>Trendlyne Widget with GDT Number Days</title>
     <script async src="https://cdn-static.trendlyne.com/static/js/webwidgets/tl-widgets.js" charset="utf-8"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+
+        h1 {
+            color: #333;
+            text-align: center;
+        }
+
+        .container {
+            display: flex;
+            gap: 20px;
+            margin-top: 20px;
+        }
+
+        .widget-section {
+            flex: 1;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .gdt-indicator {
+            flex: 1;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .gdt-indicator h2 {
+            margin-top: 0;
+            color: #333;
+            border-bottom: 2px solid #4CAF50;
+            padding-bottom: 10px;
+        }
+
+        .signal-display {
+            font-size: 48px;
+            font-weight: bold;
+            text-align: center;
+            padding: 30px;
+            margin: 20px 0;
+            border-radius: 8px;
+            transition: all 0.3s ease;
+        }
+
+        .signal-buy {
+            background-color: #e8f5e9;
+            color: #2e7d32;
+            border: 3px solid #4CAF50;
+        }
+
+        .signal-sell {
+            background-color: #ffebee;
+            color: #c62828;
+            border: 3px solid #f44336;
+        }
+
+        .signal-neutral {
+            background-color: #f5f5f5;
+            color: #666;
+            border: 3px solid #9e9e9e;
+        }
+
+        .signal-info {
+            margin: 15px 0;
+            padding: 15px;
+            background-color: #f9f9f9;
+            border-left: 4px solid #2196F3;
+            border-radius: 4px;
+        }
+
+        .signal-info h3 {
+            margin-top: 0;
+            color: #1976D2;
+        }
+
+        .signal-value {
+            font-family: 'Courier New', monospace;
+            background-color: #263238;
+            color: #4CAF50;
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+
+        .input-section {
+            margin: 20px 0;
+        }
+
+        .input-section label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+            color: #555;
+        }
+
+        .input-section textarea {
+            width: 100%;
+            min-height: 150px;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+        }
+
+        .input-section button {
+            background-color: #4CAF50;
+            color: white;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-top: 10px;
+            transition: background-color 0.3s;
+        }
+
+        .input-section button:hover {
+            background-color: #45a049;
+        }
+
+        .legend {
+            margin-top: 20px;
+            padding: 15px;
+            background-color: #f9f9f9;
+            border-radius: 4px;
+        }
+
+        .legend h3 {
+            margin-top: 0;
+            color: #333;
+        }
+
+        .legend-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 5px 0;
+            border-bottom: 1px solid #eee;
+        }
+
+        .legend-item:last-child {
+            border-bottom: none;
+        }
+
+        .buy-signal { color: #2e7d32; font-weight: bold; }
+        .sell-signal { color: #c62828; font-weight: bold; }
+    </style>
 </head>
 <body>
-    <h1>Trendlyne Widget</h1>
-    <p>Below is the embedded Trendlyne widget:</p>
-    <!-- Add the Trendlyne widget container here if needed -->
+    <h1>Trendlyne Widget with GDT Number Days Indicator</h1>
+
+    <div class="container">
+        <div class="widget-section">
+            <h2>Trendlyne Widget</h2>
+            <p>Below is the embedded Trendlyne widget:</p>
+            <!-- Add the Trendlyne widget container here if needed -->
+        </div>
+
+        <div class="gdt-indicator">
+            <h2>GDT Number Days Indicator</h2>
+
+            <div class="input-section">
+                <label for="priceData">Enter Daily Close Prices (one per line, most recent last):</label>
+                <textarea id="priceData" placeholder="Example:&#10;100.50&#10;101.20&#10;99.80&#10;102.30&#10;103.50"></textarea>
+                <button onclick="calculateGDT()">Calculate GDT Signal</button>
+            </div>
+
+            <div id="signalDisplay"></div>
+
+            <div class="legend">
+                <h3>Signal Legend</h3>
+                <div class="legend-item">
+                    <span class="buy-signal">B (1)</span>
+                    <span>Buy Day - State changed from negative to positive</span>
+                </div>
+                <div class="legend-item">
+                    <span class="buy-signal">B+1 (2)</span>
+                    <span>1st day after buy signal</span>
+                </div>
+                <div class="legend-item">
+                    <span class="buy-signal">B+2 (2.1)</span>
+                    <span>2nd day after buy signal</span>
+                </div>
+                <div class="legend-item">
+                    <span class="buy-signal">B+3 (2.2)</span>
+                    <span>3rd day after buy signal</span>
+                </div>
+                <div class="legend-item">
+                    <span class="buy-signal">B+4 (2.3)</span>
+                    <span>4th day after buy signal</span>
+                </div>
+                <div class="legend-item">
+                    <span class="sell-signal">S (3)</span>
+                    <span>Sell Day - State changed from positive to negative</span>
+                </div>
+                <div class="legend-item">
+                    <span class="sell-signal">S+1 (4)</span>
+                    <span>1st day after sell signal</span>
+                </div>
+                <div class="legend-item">
+                    <span class="sell-signal">S+2 (4.1)</span>
+                    <span>2nd day after sell signal</span>
+                </div>
+                <div class="legend-item">
+                    <span class="sell-signal">S+3 (4.2)</span>
+                    <span>3rd day after sell signal</span>
+                </div>
+                <div class="legend-item">
+                    <span class="sell-signal">S+4 (4.3)</span>
+                    <span>4th day after sell signal</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        /**
+         * GDT Number Days Indicator Implementation
+         * Based on ThinkOrSwim GDTday#_WL script
+         *
+         * This calculates buy/sell signals based on Rate of Change (ROC) analysis
+         * and tracks the number of days since the last signal.
+         */
+
+        function calculateGDT() {
+            const priceDataText = document.getElementById('priceData').value;
+            const prices = priceDataText.trim().split('\n')
+                .map(p => parseFloat(p.trim()))
+                .filter(p => !isNaN(p));
+
+            if (prices.length < 4) {
+                displayError('Please enter at least 4 days of price data');
+                return;
+            }
+
+            // Calculate states for all days
+            const states = [];
+            const buyDays = [];
+            const sellDays = [];
+
+            for (let i = 0; i < prices.length; i++) {
+                if (i < 3) {
+                    states.push(null); // Not enough data for calculation
+                    buyDays.push(false);
+                    sellDays.push(false);
+                    continue;
+                }
+
+                // ROC = close[0] - close[2]
+                const ROC = prices[i] - prices[i - 2];
+
+                // ROCprev = close[1] - close[3]
+                const ROCprev = prices[i - 1] - prices[i - 3];
+
+                // ROClevel = ROCprev + close[2]
+                const ROClevel = ROCprev + prices[i - 2];
+
+                // State: 1 if close > ROClevel, -1 if close <= ROClevel
+                const state = prices[i] > ROClevel ? 1 : -1;
+                states.push(state);
+
+                // Buy day: state[1] < 0 and state > 0
+                const isBuyDay = i > 3 && states[i - 1] < 0 && state > 0;
+                buyDays.push(isBuyDay);
+
+                // Sell day: state[1] > 0 and state < 0
+                const isSellDay = i > 3 && states[i - 1] > 0 && state < 0;
+                sellDays.push(isSellDay);
+            }
+
+            // Calculate BuyTypes value for current day (last day in array)
+            const currentIndex = prices.length - 1;
+            let buyTypeValue = null;
+            let signalType = '';
+            let signalDescription = '';
+
+            // Helper function to check conditions
+            const isBuyDay = (idx) => idx >= 0 && idx < buyDays.length && buyDays[idx];
+            const isSellDay = (idx) => idx >= 0 && idx < sellDays.length && sellDays[idx];
+
+            const i = currentIndex;
+
+            if (isBuyDay(i)) {
+                buyTypeValue = 1;
+                signalType = 'BUY';
+                signalDescription = 'Buy Day - State changed from negative to positive';
+            } else if (!isBuyDay(i) && isBuyDay(i - 1) && !isSellDay(i)) {
+                buyTypeValue = 2;
+                signalType = 'BUY+1';
+                signalDescription = '1st day after buy signal';
+            } else if (!isBuyDay(i - 1) && isBuyDay(i - 2) && !isSellDay(i - 1) && !isBuyDay(i) && !isSellDay(i)) {
+                buyTypeValue = 2.1;
+                signalType = 'BUY+2';
+                signalDescription = '2nd day after buy signal';
+            } else if (!isBuyDay(i - 2) && isBuyDay(i - 3) && !isSellDay(i - 2) && !isBuyDay(i - 1) && !isSellDay(i - 1) && !isBuyDay(i) && !isSellDay(i)) {
+                buyTypeValue = 2.2;
+                signalType = 'BUY+3';
+                signalDescription = '3rd day after buy signal';
+            } else if (!isBuyDay(i - 3) && isBuyDay(i - 4) && !isSellDay(i - 3) && !isBuyDay(i - 2) && !isSellDay(i - 2) && !isBuyDay(i - 1) && !isSellDay(i - 1) && !isBuyDay(i) && !isSellDay(i)) {
+                buyTypeValue = 2.3;
+                signalType = 'BUY+4';
+                signalDescription = '4th day after buy signal';
+            } else if (isSellDay(i)) {
+                buyTypeValue = 3;
+                signalType = 'SELL';
+                signalDescription = 'Sell Day - State changed from positive to negative';
+            } else if (!isSellDay(i) && !isBuyDay(i) && isSellDay(i - 1)) {
+                buyTypeValue = 4;
+                signalType = 'SELL+1';
+                signalDescription = '1st day after sell signal';
+            } else if (!isSellDay(i - 1) && !isBuyDay(i - 1) && isSellDay(i - 2) && !isSellDay(i) && !isBuyDay(i)) {
+                buyTypeValue = 4.1;
+                signalType = 'SELL+2';
+                signalDescription = '2nd day after sell signal';
+            } else if (!isSellDay(i - 2) && !isBuyDay(i - 2) && isSellDay(i - 3) && !isSellDay(i - 1) && !isBuyDay(i - 1) && !isSellDay(i) && !isBuyDay(i)) {
+                buyTypeValue = 4.2;
+                signalType = 'SELL+3';
+                signalDescription = '3rd day after sell signal';
+            } else if (!isSellDay(i - 3) && !isBuyDay(i - 3) && isSellDay(i - 4) && !isSellDay(i - 2) && !isBuyDay(i - 2) && !isSellDay(i - 1) && !isBuyDay(i - 1) && !isSellDay(i) && !isBuyDay(i)) {
+                buyTypeValue = 4.3;
+                signalType = 'SELL+4';
+                signalDescription = '4th day after sell signal';
+            }
+
+            displaySignal(buyTypeValue, signalType, signalDescription, prices[currentIndex], states[currentIndex]);
+        }
+
+        function displaySignal(value, type, description, currentPrice, currentState) {
+            const displayDiv = document.getElementById('signalDisplay');
+
+            if (value === null) {
+                displayDiv.innerHTML = `
+                    <div class="signal-display signal-neutral">
+                        No Signal
+                    </div>
+                    <div class="signal-info">
+                        <p>Not enough data to generate a signal. Need more price history.</p>
+                    </div>
+                `;
+                return;
+            }
+
+            const isBuySignal = value >= 1 && value < 3;
+            const signalClass = isBuySignal ? 'signal-buy' : 'signal-sell';
+
+            displayDiv.innerHTML = `
+                <div class="signal-display ${signalClass}">
+                    ${type}
+                </div>
+                <div class="signal-info">
+                    <h3>Signal Details</h3>
+                    <p><strong>Type:</strong> ${description}</p>
+                    <p><strong>Signal Value:</strong> ${value}</p>
+                    <p><strong>Current Price:</strong> $${currentPrice.toFixed(2)}</p>
+                    <p><strong>Current State:</strong> ${currentState > 0 ? 'Positive (Bullish)' : 'Negative (Bearish)'}</p>
+                </div>
+                <div class="signal-value">
+                    BuyTypes = ${value}
+                </div>
+            `;
+        }
+
+        function displayError(message) {
+            const displayDiv = document.getElementById('signalDisplay');
+            displayDiv.innerHTML = `
+                <div class="signal-display signal-neutral">
+                    Error
+                </div>
+                <div class="signal-info">
+                    <p style="color: #c62828;"><strong>Error:</strong> ${message}</p>
+                </div>
+            `;
+        }
+
+        // Example data for demonstration
+        window.addEventListener('load', function() {
+            const examplePrices = [
+                '100.00',
+                '101.50',
+                '99.80',
+                '102.30',
+                '103.50',
+                '102.00',
+                '104.20',
+                '105.50'
+            ].join('\n');
+
+            document.getElementById('priceData').value = examplePrices;
+        });
+    </script>
 </body>
 </html>
