@@ -422,7 +422,7 @@ top_15 = results_df.head(15).sort_values('Edge')
 colors = ['green' if x > 0 else 'red' for x in top_15['Edge']]
 ax1.barh(range(len(top_15)), top_15['Edge'], color=colors)
 ax1.set_yticks(range(len(top_15)))
-ax1.set_yticklabels([f"{row['Condition'][:20]} ({row['GDT_Day']})" for _, row in top_15.iterrows()], fontsize=7)
+ax1.set_yticklabels([f"{row.Condition[:20]} ({row.GDT_Day})" for _, row in top_15.iterrows()], fontsize=7)
 ax1.set_xlabel('Edge (%)')
 ax1.set_title('Top 15 Edges (Combo + GDT Day)')
 ax1.axvline(x=0, color='black', linestyle='--', linewidth=1)
