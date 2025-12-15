@@ -75,18 +75,28 @@ for group_name, symbols in SYMBOL_GROUPS.items():
 print("\nSymbol Groups:")
 for i, (group_name, symbols) in enumerate(SYMBOL_GROUPS_FILTERED.items(), 1):
     print(f"  {i}. {group_name}: {', '.join(symbols)}")
+print(f"  {len(SYMBOL_GROUPS_FILTERED)+1}. ALL SYMBOLS ({len(all_symbols)} symbols)")
 
 # ============================================================================
 # USER INPUT
 # ============================================================================
 group_input = input("\nEnter group number: ").strip()
-group_idx = int(group_input) - 1
-group_name = list(SYMBOL_GROUPS_FILTERED.keys())[group_idx]
-SYMBOLS = SYMBOL_GROUPS_FILTERED[group_name]
-group_label = group_name.replace(' ', '_')
+group_num = int(group_input)
+
+if group_num == len(SYMBOL_GROUPS_FILTERED) + 1:
+    # ALL symbols selected
+    SYMBOLS = all_symbols
+    group_name = "ALL SYMBOLS"
+    group_label = "ALL"
+else:
+    # Specific group selected
+    group_idx = group_num - 1
+    group_name = list(SYMBOL_GROUPS_FILTERED.keys())[group_idx]
+    SYMBOLS = SYMBOL_GROUPS_FILTERED[group_name]
+    group_label = group_name.replace(' ', '_')
 
 print(f"\n✓ Selected: {group_name}")
-print(f"  Symbols: {', '.join(SYMBOLS)}")
+print(f"  Symbols ({len(SYMBOLS)}): {', '.join(SYMBOLS[:10])}{' ...' if len(SYMBOLS) > 10 else ''}")
 
 # Filter daytype data
 daytype_df = daytype_df[daytype_df['Symbol'].isin(SYMBOLS)].copy()
