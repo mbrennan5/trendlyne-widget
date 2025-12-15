@@ -4,19 +4,21 @@ GDT DAY# + GAPSTAT + GAP DIRECTION ANALYSIS (SAME-DAY PREDICTION)
 ============================================================================
 Analyzes gap behavior for SAME-DAY directional prediction.
 
-LOGIC: If YESTERDAY was GDT Day X + THIS MORNING we gapped Y
+LOGIC: If YESTERDAY was GDT Day X + YESTERDAY had range/close Y + THIS MORNING we gapped Z
        → Will TODAY be directional (by close)?
 
-Tests:
+Tests (all known at this morning's open):
 1. YESTERDAY's GDT Day# (Buy_Day1-4, Sell_Day1-4)
-2. THIS MORNING's gap characteristics:
+2. YESTERDAY's range/close characteristics:
+   - Range size vs usual ADR (narrow/wide/very wide)
+   - Closing range % (top quarter, bottom quarter, etc.)
+3. THIS MORNING's gap characteristics:
    - GapStat size (>1.0, >1.5, >2.0, >2.5)
    - Gap direction vs 5-day SMA trend (with trend vs against trend)
    - Gap size buckets (small, medium, large, xlarge)
-   - Range size vs usual ADR
-   - Closing range % (where close is within day's range)
 
 No WR indicators - pure gap behavior analysis.
+All predictors are known at this morning's open!
 
 Copy this entire code block into Google Colab and run it.
 ============================================================================
@@ -373,13 +375,23 @@ merged_df = indicators_df.merge(
 
 # SAME-DAY PREDICTION SETUP:
 # - YESTERDAY's GDT Day# tells us where we are in the momentum cycle
+# - YESTERDAY's range characteristics (wide/narrow, closing position)
 # - THIS MORNING's gap characteristics (at open)
 # - Predict: Will TODAY be directional (by close)?
 
 merged_df = merged_df.sort_values(['Symbol', 'Date'])
 
-# Get YESTERDAY's GDT Day# (shift by 1)
+# Get YESTERDAY's context (shift by 1)
 merged_df['Prev_GDT_DayType'] = merged_df.groupby('Symbol')['GDT_DayType'].shift(1)
+
+# YESTERDAY's range characteristics (known at yesterday's close, before today's open)
+merged_df['Prev_Range_Size'] = merged_df.groupby('Symbol')['Range_Size'].shift(1)
+merged_df['Prev_Range_vs_ADR'] = merged_df.groupby('Symbol')['Range_vs_ADR'].shift(1)
+merged_df['Prev_Close_Position'] = merged_df.groupby('Symbol')['Close_Position'].shift(1)
+merged_df['Prev_Close_Range_Pct'] = merged_df.groupby('Symbol')['Close_Range_Pct'].shift(1)
+merged_df['Prev_Close_Top_Half'] = merged_df.groupby('Symbol')['Close_Top_Half'].shift(1)
+merged_df['Prev_Close_Top_Quarter'] = merged_df.groupby('Symbol')['Close_Top_Quarter'].shift(1)
+merged_df['Prev_Close_Bottom_Quarter'] = merged_df.groupby('Symbol')['Close_Bottom_Quarter'].shift(1)
 
 # Target is TODAY's directional outcome
 merged_df['Today_IsDirectional'] = merged_df['IsDirectional']
@@ -388,7 +400,7 @@ merged_df['Today_IsDirectional'] = merged_df['IsDirectional']
 predictive_df = merged_df.dropna(subset=['Prev_GDT_DayType']).copy()
 
 print(f"✓ Created predictive dataset with {len(predictive_df):,} samples")
-print(f"  Logic: If YESTERDAY was GDT Day X + THIS MORNING gapped Y → predict TODAY's outcome")
+print(f"  Logic: YESTERDAY GDT Day X + YESTERDAY range/close + THIS MORNING gap → predict TODAY")
 
 baseline = predictive_df['Today_IsDirectional'].mean() * 100
 print(f"  Overall baseline: {baseline:.1f}%")
@@ -408,7 +420,7 @@ for day_type, count in gdt_counts.items():
 print("\n" + "="*80)
 print("STEP 5: GAP ANALYSIS BY YESTERDAY'S GDT DAY#")
 print("="*80)
-print("Logic: If YESTERDAY was GDT Day X + THIS MORNING gapped Y → does TODAY go directional?")
+print("Logic: YESTERDAY GDT Day + YESTERDAY range/close + THIS MORNING gap → TODAY directional?")
 
 def analyze_gap_by_gdt(df: pd.DataFrame, condition_name: str, condition_mask: pd.Series, gdt_day: str) -> Dict:
     """Analyze gap condition when YESTERDAY was a specific GDT day
@@ -464,24 +476,24 @@ gap_conditions = [
     ('Gap Up', (predictive_df['Gap_Up'] == 1)),
     ('Gap Down', (predictive_df['Gap_Down'] == 1)),
 
-    # Range size vs usual
-    ('Narrow Range Day', (predictive_df['Range_Size'] == 'Narrow')),
-    ('Wide Range Day', (predictive_df['Range_Size'] == 'Wide')),
-    ('Very Wide Range Day', (predictive_df['Range_Size'] == 'Very_Wide')),
+    # YESTERDAY's Range size vs usual (known at yesterday's close)
+    ('Yest: Narrow Range', (predictive_df['Prev_Range_Size'] == 'Narrow')),
+    ('Yest: Wide Range', (predictive_df['Prev_Range_Size'] == 'Wide')),
+    ('Yest: Very Wide Range', (predictive_df['Prev_Range_Size'] == 'Very_Wide')),
 
-    # Closing position
-    ('Close Top Quarter', (predictive_df['Close_Position'] == 'Top_Quarter')),
-    ('Close Bottom Quarter', (predictive_df['Close_Position'] == 'Bottom_Quarter')),
-    ('Close Upper Middle', (predictive_df['Close_Position'] == 'Upper_Middle')),
-    ('Close Lower Middle', (predictive_df['Close_Position'] == 'Lower_Middle')),
-    ('Close Top Half', (predictive_df['Close_Top_Half'] == 1)),
+    # YESTERDAY's Closing position (known at yesterday's close)
+    ('Yest: Close Top Quarter', (predictive_df['Prev_Close_Position'] == 'Top_Quarter')),
+    ('Yest: Close Bottom Quarter', (predictive_df['Prev_Close_Position'] == 'Bottom_Quarter')),
+    ('Yest: Close Upper Middle', (predictive_df['Prev_Close_Position'] == 'Upper_Middle')),
+    ('Yest: Close Lower Middle', (predictive_df['Prev_Close_Position'] == 'Lower_Middle')),
+    ('Yest: Close Top Half', (predictive_df['Prev_Close_Top_Half'] == 1)),
 
-    # Combinations
-    ('Gap Against + Wide Range', (predictive_df['Gap_Against_Trend'] == 1) & (predictive_df['Range_Size'].isin(['Wide', 'Very_Wide']))),
-    ('Gap Against + Close Top Quarter', (predictive_df['Gap_Against_Trend'] == 1) & (predictive_df['Close_Top_Quarter'] == 1)),
-    ('Gap With + Wide Range', (predictive_df['Gap_With_Trend'] == 1) & (predictive_df['Range_Size'].isin(['Wide', 'Very_Wide']))),
-    ('GapStat >2 + Wide Range', (predictive_df['GapStat_Above_2'] == 1) & (predictive_df['Range_Size'].isin(['Wide', 'Very_Wide']))),
-    ('GapStat >2 + Close Top Quarter', (predictive_df['GapStat_Above_2'] == 1) & (predictive_df['Close_Top_Quarter'] == 1)),
+    # Combinations (THIS MORNING's gap + YESTERDAY's range/close)
+    ('Gap Against + Yest Wide Range', (predictive_df['Gap_Against_Trend'] == 1) & (predictive_df['Prev_Range_Size'].isin(['Wide', 'Very_Wide']))),
+    ('Gap Against + Yest Close Top Qtr', (predictive_df['Gap_Against_Trend'] == 1) & (predictive_df['Prev_Close_Top_Quarter'] == 1)),
+    ('Gap With + Yest Wide Range', (predictive_df['Gap_With_Trend'] == 1) & (predictive_df['Prev_Range_Size'].isin(['Wide', 'Very_Wide']))),
+    ('GapStat >2 + Yest Wide Range', (predictive_df['GapStat_Above_2'] == 1) & (predictive_df['Prev_Range_Size'].isin(['Wide', 'Very_Wide']))),
+    ('GapStat >2 + Yest Close Top Qtr', (predictive_df['GapStat_Above_2'] == 1) & (predictive_df['Prev_Close_Top_Quarter'] == 1)),
 ]
 
 results = []
@@ -626,9 +638,9 @@ except:
 print("\n" + "="*80)
 print("ANALYSIS COMPLETE!")
 print("="*80)
-print("\nKey Insights - SAME DAY PREDICTION:")
-print("- If YESTERDAY was Buy_Day2 and THIS MORNING we gap against trend → TODAY directional?")
+print("\nKey Insights - SAME DAY PREDICTION (all known at this morning's open):")
+print("- If YESTERDAY was Buy_Day2 + wide range + THIS MORNING gap against → TODAY directional?")
 print("- Which gaps work best when YESTERDAY was a specific GDT day?")
-print("- Does closing position (top/bottom quarter) boost the edge?")
-print("- Wide range days on gaps against trend = reversal signal?")
+print("- Does YESTERDAY's closing position (top/bottom quarter) boost the edge?")
+print("- YESTERDAY wide range + THIS MORNING gap against trend = reversal signal?")
 print("="*80)
