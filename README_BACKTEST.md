@@ -1,6 +1,10 @@
-# SPY/VIX Z-Score Backtest
+# SPY/VIX Z-Score Trading Analysis
 
-A quantitative trading strategy backtest for SPY (S&P 500 ETF) using the VIX Z-Score indicator.
+Comprehensive quantitative analysis suite for SPY (S&P 500 ETF) using the VIX Z-Score indicator.
+
+This repository contains:
+1. **Backtest System** - Test trading strategies based on VIX Z-Score signals
+2. **Seasonal Edge Analysis** - Discover performance edges across market regimes
 
 ## Strategy Overview
 
@@ -32,10 +36,64 @@ This backtest implements a long-only strategy based on the ThetaTrend VIX Z-Scor
 4. **Signal Generation:**
    - Use 3-day SMA of Z-Score as the moving average for crossover signals
 
+---
+
+## Seasonal Edge Analysis
+
+Beyond simple buy/sell signals, we analyze **when** and **how** to trade SPY based on market regimes.
+
+### Market Seasons (Regimes)
+
+The VIX Z-Score defines 4 distinct market seasons:
+
+| Season | Condition | Regime | Color |
+|--------|-----------|--------|-------|
+| **Summer** | RiskZ > 0 & Rising | Risk-On Accelerating | Green |
+| **Fall** | RiskZ > 0 & Falling | Risk-On Weakening | Dark Green |
+| **Winter** | RiskZ ≤ 0 & Falling | Risk-Off Accelerating | Red |
+| **Spring** | RiskZ ≤ 0 & Rising | Risk-Off Weakening | Dark Red |
+
+### Edges Discovered
+
+The seasonal analysis examines:
+
+1. **Overnight Edge** (Close-to-Open returns)
+   - Does SPY gap up/down overnight differently by season?
+   - Should you hold overnight or close before the bell?
+
+2. **Intraday Edge** (Open-to-Close returns)
+   - Does SPY trend better intraday in certain seasons?
+   - Should you day-trade or swing-trade?
+
+3. **Swing Period Performance**
+   - Optimal holding periods (2D, 3D, 5D, 10D) by season
+   - Mean returns, win rates, and Sharpe ratios
+
+4. **Statistical Significance**
+   - Win rates by season and timeframe
+   - Return distributions
+   - Risk-adjusted performance (Sharpe ratios)
+
+### Key Questions Answered
+
+- **"Should I hold SPY overnight during Summer?"**
+- **"What's the best holding period during Winter?"**
+- **"Does SPY have stronger intraday or overnight edge in Spring?"**
+- **"Which season offers the best risk-adjusted returns?"**
+
+---
+
 ## Files
 
+### Backtest System
 - **`vix_zscore_backtest.py`** - Standalone Python script for running the backtest
 - **`VIX_ZScore_Backtest.ipynb`** - Jupyter notebook for Google Colab
+
+### Seasonal Edge Analysis
+- **`seasonal_edge_analysis.py`** - Standalone Python script for edge analysis
+- **`Seasonal_Edge_Analysis.ipynb`** - Jupyter notebook for Google Colab
+
+### Shared
 - **`requirements.txt`** - Python dependencies
 
 ## Usage
@@ -48,13 +106,23 @@ pip install -r requirements.txt
 
 # Run backtest
 python vix_zscore_backtest.py
+
+# Run seasonal edge analysis
+python seasonal_edge_analysis.py
 ```
 
 ### Running in Google Colab
 
+**For Backtest:**
 1. Upload `VIX_ZScore_Backtest.ipynb` to Google Colab
 2. Run each cell sequentially
 3. Optionally save results to Google Drive
+
+**For Seasonal Edge Analysis:**
+1. Upload `Seasonal_Edge_Analysis.ipynb` to Google Colab
+2. Run each cell sequentially
+3. View comprehensive edge analysis and charts
+4. Export results to Google Drive
 
 ## Features
 
@@ -83,6 +151,26 @@ python vix_zscore_backtest.py
 - Trade log CSV
 - Full portfolio data CSV
 - Performance charts (PNG)
+
+### Seasonal Edge Analysis Capabilities
+- Automatic season classification (Summer, Fall, Winter, Spring)
+- Overnight vs intraday return comparison
+- Swing period analysis (2D, 3D, 5D, 10D)
+- Win rate and Sharpe ratio by season
+- Return distribution analysis
+- Current market regime identification
+
+### Edge Analysis Visualizations
+- Overnight vs Intraday returns by season (bar chart)
+- Win rates comparison (bar chart)
+- Sharpe ratios by season (bar chart)
+- Swing period performance (line chart)
+- Return distributions (histograms)
+
+### Edge Analysis Exports
+- Seasonal statistics summary CSV
+- Detailed day-by-day data CSV
+- Comprehensive charts (PNG)
 
 ## Default Parameters
 
