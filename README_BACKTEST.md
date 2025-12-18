@@ -83,6 +83,47 @@ The seasonal analysis examines:
 
 ---
 
+## Credit Spread Analysis
+
+In addition to VIX-based signals, this repository includes comprehensive analysis of the **IEI/HYG credit spread ratio** for predicting forward SPY returns.
+
+### Credit Spread Indicator
+
+**IEI/HYG Ratio = 3-7yr Treasuries / High Yield Corporate Bonds**
+
+- **Rising ratio** → Spreads widening → Flight to safety → Risk-off
+- **Falling ratio** → Spreads tightening → Risk appetite → Risk-on
+
+### Top Signals Discovered
+
+Based on testing 200+ signals across various methodologies:
+
+1. **Extreme Wide → Large Tightening** (Sharpe 5.52, +2.41% mean, 85% win rate)
+   - Z-Score [1.0-1.5] + 1-day ROC < -0.3%
+   - Best for 5-day holds
+
+2. **Z-Score Neutral Zone [0.0-0.25]** (Sharpe 3.06, +1.60% mean, 75% win rate)
+   - Spreads slightly elevated but normalizing
+   - Best for 10-day holds
+
+3. **Moderate Tight + Accelerating** (Sharpe 1.77, +0.53% mean, 68% win rate)
+   - Z-Score [-1.5 to -0.5] + 5-day ROC > 0.3% + MA10 > MA50
+   - Best for 5-day holds
+
+See **`CREDIT_SPREAD_GUIDE.md`** for complete signal documentation and trading guidelines.
+
+### Robustness Testing
+
+The credit spread signals have been validated across multiple parameter sets to ensure they are not curve-fitted:
+
+- **MA Smoothing Periods:** 5, 10, 20, 30, 50 days
+- **Z-Score Lookbacks:** 60, 90, 120, 180, 252, 360 days
+- **ROC Periods:** 1, 2, 3, 5, 10 days
+
+Run the robustness test to verify signal stability across different parameter choices.
+
+---
+
 ## Files
 
 ### Backtest System
@@ -93,8 +134,15 @@ The seasonal analysis examines:
 - **`seasonal_edge_analysis.py`** - Standalone Python script for edge analysis
 - **`Seasonal_Edge_Analysis.ipynb`** - Jupyter notebook for Google Colab
 
+### Credit Spread Analysis
+- **`credit_spread_comprehensive_test.py`** - Tests 200+ credit spread signals
+- **`credit_spread_robustness_test.py`** - Parameter robustness validation
+- **`Credit_Spread_Robustness_Test.ipynb`** - Robustness test for Google Colab
+- **`CREDIT_SPREAD_GUIDE.md`** - Complete trading guide with top signals
+
 ### Shared
 - **`requirements.txt`** - Python dependencies
+- **`EDGE_PATTERNS.md`** - Expected seasonal patterns reference
 
 ## Usage
 
@@ -104,16 +152,22 @@ The seasonal analysis examines:
 # Install dependencies
 pip install -r requirements.txt
 
-# Run backtest
+# Run VIX backtest
 python vix_zscore_backtest.py
 
 # Run seasonal edge analysis
 python seasonal_edge_analysis.py
+
+# Run credit spread comprehensive test
+python credit_spread_comprehensive_test.py
+
+# Run robustness validation
+python credit_spread_robustness_test.py
 ```
 
 ### Running in Google Colab
 
-**For Backtest:**
+**For VIX Backtest:**
 1. Upload `VIX_ZScore_Backtest.ipynb` to Google Colab
 2. Run each cell sequentially
 3. Optionally save results to Google Drive
@@ -123,6 +177,13 @@ python seasonal_edge_analysis.py
 2. Run each cell sequentially
 3. View comprehensive edge analysis and charts
 4. Export results to Google Drive
+
+**For Credit Spread Robustness Test:**
+1. Upload `Credit_Spread_Robustness_Test.ipynb` to Google Colab
+2. Run each cell sequentially
+3. View parameter sensitivity analysis
+4. Verify signal stability across different lookback periods
+5. Export robustness metrics and visualizations
 
 ## Features
 
